@@ -155,6 +155,10 @@ class AuditTask(models.Model):
         related_name="assigned_tasks",
     )
     due_date = models.DateField(null=True, blank=True)
+    escalation_flag = models.BooleanField(
+        default=False,
+        help_text="Set to True when this task needs escalation attention.",
+    )
     completed_at = models.DateTimeField(null=True, blank=True)
     notes = models.TextField(blank=True)
     created_by = models.ForeignKey(

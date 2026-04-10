@@ -715,3 +715,36 @@ export function useDeleteReport() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["reports"] }); },
   });
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ALIAS EXPORTS — original PowerApps hook name compatibility
+// These allow original page components that used Dataverse-generated hook names
+// to work alongside the Django-backed hooks above without any code changes.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Alias: useAuditEngagementList → useEngagementList */
+export const useAuditEngagementList = useEngagementList;
+
+/** Alias: useAuditEngagement → useEngagement */
+export const useAuditEngagement = useEngagement;
+
+/** Alias: useApprovalRequestList → useApprovalList */
+export const useApprovalRequestList = useApprovalList;
+
+/** Alias: useApprovalRequest → useApproval */
+export const useApprovalRequest = useApproval;
+
+/** Alias: useRemediationActionList → useRemediationList */
+export const useRemediationActionList = useRemediationList;
+
+/** Alias: useAuditReportList → useReportList */
+export const useAuditReportList = useReportList;
+
+/** Alias: useAuditReport → useReport */
+export const useAuditReport = useReport;
+
+/** Alias: useAuditReportTemplateList → useReportTemplateList */
+export const useAuditReportTemplateList = useReportTemplateList;
+
+/** Alias: useAuditReportTemplate → useReportTemplate */
+export const useAuditReportTemplate = useReportTemplate;

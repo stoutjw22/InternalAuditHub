@@ -12,6 +12,7 @@ class AuditReportTemplateSerializer(serializers.ModelSerializer):
         model = AuditReportTemplate
         fields = (
             "id", "name", "description", "content_template",
+            "sharepoint_template_url",
             "is_active", "created_by", "created_by_detail",
             "created_at", "updated_at",
         )
@@ -55,6 +56,7 @@ class AuditReportSerializer(serializers.ModelSerializer):
             "title", "executive_summary", "content",
             "status", "status_display",
             "distribution_list",
+            "sharepoint_report_url",
             "generated_by", "generated_by_detail",
             "finalized_by", "finalized_by_detail",
             "finalized_at", "created_at", "updated_at",

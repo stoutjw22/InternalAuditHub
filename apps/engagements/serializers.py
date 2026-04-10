@@ -68,7 +68,7 @@ class AuditTaskSerializer(serializers.ModelSerializer):
             "id", "engagement", "name", "description",
             "status", "status_display", "priority", "priority_display",
             "assigned_to", "assigned_to_detail",
-            "due_date", "completed_at", "notes",
+            "due_date", "escalation_flag", "completed_at", "notes",
             "created_by", "created_at", "updated_at",
         )
         read_only_fields = ("id", "created_by", "created_at", "updated_at")

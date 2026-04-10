@@ -36,12 +36,15 @@ class RemediationActionSerializer(serializers.ModelSerializer):
 class EvidenceSerializer(serializers.ModelSerializer):
     uploaded_by_detail = UserListSerializer(source="uploaded_by", read_only=True)
     file_size_kb = serializers.SerializerMethodField()
+    evidence_type_display = serializers.CharField(source="get_evidence_type_display", read_only=True)
 
     class Meta:
         model = Evidence
         fields = (
             "id", "finding", "engagement", "task",
             "title", "description",
+            "evidence_type", "evidence_type_display",
+            "sharepoint_url",
             "file", "original_filename", "file_size", "file_size_kb", "content_type",
             "uploaded_by", "uploaded_by_detail", "uploaded_at",
         )

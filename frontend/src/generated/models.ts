@@ -183,6 +183,20 @@ export interface AuditEngagement {
   updated_at: ISODateTime;
 }
 
+export type EvidenceType =
+  | "workpaper" | "screenshot" | "document" | "spreadsheet"
+  | "email" | "photo" | "other";
+
+export const EVIDENCE_TYPE_LABELS: Record<EvidenceType, string> = {
+  workpaper: "Workpaper",
+  screenshot: "Screenshot",
+  document: "Document",
+  spreadsheet: "Spreadsheet",
+  email: "Email",
+  photo: "Photo",
+  other: "Other",
+};
+
 export type TaskStatus = "todo" | "in_progress" | "review" | "done" | "blocked";
 export type TaskPriority = "low" | "medium" | "high" | "critical";
 
@@ -206,6 +220,7 @@ export interface AuditTask {
   assigned_to: UUID | null;
   assigned_to_detail?: UserListItem;
   due_date: ISODate | null;
+  escalation_flag: boolean;
   completed_at: ISODateTime | null;
   notes: string;
   created_by: UUID | null;
@@ -421,6 +436,8 @@ export interface Evidence {
   task: UUID | null;
   title: string;
   description: string;
+  evidence_type: EvidenceType;
+  evidence_type_display: string;
   sharepoint_url: string;
   file: string | null;
   original_filename: string;
@@ -513,6 +530,7 @@ export interface AuditReportTemplate {
   name: string;
   description: string;
   content_template: string;
+  sharepoint_template_url: string;
   is_active: boolean;
   created_by: UUID | null;
   created_at: ISODateTime;
@@ -555,6 +573,7 @@ export interface AuditReport {
   status: ReportStatus;
   status_display: string;
   distribution_list: string;
+  sharepoint_report_url: string;
   generated_by: UUID | null;
   generated_by_detail?: UserListItem;
   finalized_by: UUID | null;

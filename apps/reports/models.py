@@ -16,6 +16,10 @@ class AuditReportTemplate(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=200)
     description = models.TextField(blank=True)
+    sharepoint_template_url = models.URLField(
+        blank=True,
+        help_text="SharePoint URL where the source template document is stored.",
+    )
     # Markdown/HTML template with {{placeholder}} variables
     content_template = models.TextField(
         help_text=(
@@ -89,6 +93,10 @@ class AuditReport(models.Model):
         related_name="finalized_reports",
     )
     finalized_at = models.DateTimeField(null=True, blank=True)
+    sharepoint_report_url = models.URLField(
+        blank=True,
+        help_text="SharePoint URL where the finalised report document is stored.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

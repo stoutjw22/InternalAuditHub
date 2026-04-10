@@ -194,6 +194,15 @@ class RemediationAction(models.Model):
 class Evidence(models.Model):
     """Uploaded file evidence attached to a finding, engagement, or task."""
 
+    class EvidenceType(models.TextChoices):
+        WORKPAPER = "workpaper", _("Workpaper")
+        SCREENSHOT = "screenshot", _("Screenshot")
+        DOCUMENT = "document", _("Document")
+        SPREADSHEET = "spreadsheet", _("Spreadsheet")
+        EMAIL = "email", _("Email")
+        PHOTO = "photo", _("Photo")
+        OTHER = "other", _("Other")
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     # At least one of finding / engagement / task must be set
     finding = models.ForeignKey(
@@ -219,6 +228,12 @@ class Evidence(models.Model):
     )
     title = models.CharField(max_length=255)
     description = models.TextField(blank=True)
+    evidence_type = models.CharField(
+        max_length=20,
+        choices=EvidenceType.choices,
+        default=EvidenceType.DOCUMENT,
+        db_index=True,
+    )
     # Optional SharePoint URL instead of uploaded file
     sharepoint_url = models.URLField(
         blank=True,
