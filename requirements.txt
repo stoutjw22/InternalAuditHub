@@ -1,0 +1,28 @@
+# ── Core ──────────────────────────────────────────────────────────────────────
+Django==5.0.9
+djangorestframework==3.15.2
+django-environ==0.11.2
+
+# ── Database ──────────────────────────────────────────────────────────────────
+psycopg2-binary==2.9.9
+
+# ── Authentication ────────────────────────────────────────────────────────────
+djangorestframework-simplejwt==5.3.1
+django-allauth[socialaccount]==64.2.1
+
+# ── API Utilities ─────────────────────────────────────────────────────────────
+django-cors-headers==4.4.0
+django-filter==24.3
+drf-spectacular==0.27.2
+
+# ── Security ──────────────────────────────────────────────────────────────────
+django-axes==6.5.1        # brute-force lockout
+Pillow==10.4.0            # image handling for avatars / evidence
+
+# ── Development ───────────────────────────────────────────────────────────────
+black==24.8.0
+isort==5.13.2
+flake8==7.1.0
+pytest==8.3.2
+pytest-django==4.8.0
+factory-boy==3.3.1
