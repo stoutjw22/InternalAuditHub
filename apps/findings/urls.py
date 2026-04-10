@@ -10,6 +10,7 @@ from .views import (
     FindingListCreateView,
     RemediationActionDetailView,
     RemediationActionListCreateView,
+    RemediationActionListView,
 )
 
 urlpatterns = [
@@ -17,7 +18,8 @@ urlpatterns = [
     path("findings/", FindingListCreateView.as_view(), name="finding-list"),
     path("findings/<uuid:pk>/", FindingDetailView.as_view(), name="finding-detail"),
     path("engagements/<uuid:engagement_pk>/findings/", FindingListCreateView.as_view(), name="engagement-finding-list"),
-    # Remediation actions nested under a finding
+    # Remediation actions — flat list and nested under a finding
+    path("remediations/", RemediationActionListView.as_view(), name="remediation-flat-list"),
     path("findings/<uuid:finding_pk>/remediations/", RemediationActionListCreateView.as_view(), name="remediation-list"),
     path("findings/<uuid:finding_pk>/remediations/<uuid:pk>/", RemediationActionDetailView.as_view(), name="remediation-detail"),
     # Evidence

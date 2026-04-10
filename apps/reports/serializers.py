@@ -27,16 +27,20 @@ class AuditReportListSerializer(serializers.ModelSerializer):
 
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     generated_by_name = serializers.SerializerMethodField()
+    engagement_name = serializers.SerializerMethodField()
 
     class Meta:
         model = AuditReport
         fields = (
-            "id", "engagement", "title", "status", "status_display",
+            "id", "engagement", "engagement_name", "title", "status", "status_display",
             "generated_by", "generated_by_name", "finalized_at", "created_at",
         )
 
     def get_generated_by_name(self, obj) -> str:
         return obj.generated_by.get_full_name() if obj.generated_by else ""
+
+    def get_engagement_name(self, obj) -> str:
+        return obj.engagement.name if obj.engagement_id else ""
 
 
 class AuditReportSerializer(serializers.ModelSerializer):

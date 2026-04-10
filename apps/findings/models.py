@@ -219,7 +219,12 @@ class Evidence(models.Model):
     )
     title = models.CharField(max_length=255)
     description = models.TextField(blank=True)
-    file = models.FileField(upload_to=_evidence_upload_path)
+    # Optional SharePoint URL instead of uploaded file
+    sharepoint_url = models.URLField(
+        blank=True,
+        help_text="SharePoint document URL (alternative to file upload).",
+    )
+    file = models.FileField(upload_to=_evidence_upload_path, null=True, blank=True)
     original_filename = models.CharField(max_length=255, blank=True)
     file_size = models.PositiveBigIntegerField(default=0, help_text="Size in bytes.")
     content_type = models.CharField(max_length=100, blank=True)
@@ -243,6 +248,8 @@ class Evidence(models.Model):
     def clean(self):
         if not (self.finding_id or self.engagement_id or self.task_id):
             raise ValidationError("Evidence must be linked to a finding, engagement, or task.")
+        if not (self.file or self.sharepoint_url):
+            raise ValidationError("Evidence must have either a file upload or a SharePoint URL.")
         if self.file_size > MAX_EVIDENCE_SIZE_MB * 1024 * 1024:
             raise ValidationError(f"File exceeds maximum allowed size of {MAX_EVIDENCE_SIZE_MB} MB.")
 

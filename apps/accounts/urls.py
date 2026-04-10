@@ -6,6 +6,7 @@ from .views import (
     MeView,
     PasswordChangeView,
     RegisterView,
+    RoleFilteredUserListView,
     UserDetailView,
     UserListView,
 )
@@ -21,4 +22,6 @@ urlpatterns = [
     path("password/change/", PasswordChangeView.as_view(), name="password-change"),
     path("users/", UserListView.as_view(), name="user-list"),
     path("users/<uuid:pk>/", UserDetailView.as_view(), name="user-detail"),
+    # Role-filtered user lists for dropdowns
+    path("users/<str:role_slug>/", RoleFilteredUserListView.as_view(), name="user-list-by-role"),
 ]

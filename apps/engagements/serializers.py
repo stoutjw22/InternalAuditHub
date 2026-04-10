@@ -25,7 +25,7 @@ class AuditEngagementListSerializer(serializers.ModelSerializer):
         fields = (
             "id", "name", "status", "status_display",
             "audit_manager", "audit_manager_name",
-            "start_date", "end_date", "created_at",
+            "period", "start_date", "end_date", "created_at",
         )
 
     def get_audit_manager_name(self, obj) -> str:
@@ -45,7 +45,7 @@ class AuditEngagementSerializer(serializers.ModelSerializer):
             "id", "name", "description", "status", "status_display",
             "audit_manager", "audit_manager_detail",
             "business_process", "business_objective",
-            "scope", "objectives",
+            "period", "scope", "objectives",
             "start_date", "end_date",
             "assigned_auditors",
             "created_by", "created_at", "updated_at",

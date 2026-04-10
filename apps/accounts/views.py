@@ -104,3 +104,39 @@ class UserDetailView(generics.RetrieveUpdateAPIView):
     serializer_class = UserProfileSerializer
     permission_classes = [IsAdminRole]
     queryset = User.objects.all()
+
+
+class RoleFilteredUserListView(generics.ListAPIView):
+    """
+    List users filtered to a specific role.
+    GET /api/v1/auth/users/auditors/
+    GET /api/v1/auth/users/managers/
+    GET /api/v1/auth/users/risk-owners/
+    GET /api/v1/auth/users/control-owners/
+    GET /api/v1/auth/users/finding-owners/
+    Used by frontend dropdowns that need role-specific user lists.
+    """
+
+    serializer_class = UserListSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ["email", "first_name", "last_name", "department"]
+    ordering = ["last_name"]
+
+    ROLE_MAP = {
+        "auditors": "auditor",
+        "managers": "audit_manager",
+        "risk-owners": "risk_owner",
+        "control-owners": "control_owner",
+        "finding-owners": "finding_owner",
+    }
+
+    def get_queryset(self):
+        role_slug = self.kwargs.get("role_slug", "")
+        role = self.ROLE_MAP.get(role_slug)
+        qs = User.objects.filter(is_active=True).only(
+            "id", "email", "first_name", "last_name", "role", "department"
+        )
+        if role:
+            qs = qs.filter(role=role)
+        return qs

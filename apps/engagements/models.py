@@ -46,6 +46,11 @@ class AuditEngagement(models.Model):
         blank=True,
         related_name="engagements",
     )
+    period = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="Audit period (e.g. 'Q1 2026', 'FY2025', 'Jan–Mar 2026').",
+    )
     scope = models.TextField(blank=True, help_text="What is included/excluded.")
     objectives = models.TextField(blank=True, help_text="Stated goals of this engagement.")
     start_date = models.DateField(null=True, blank=True)

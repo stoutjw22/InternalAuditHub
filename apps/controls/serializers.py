@@ -35,7 +35,7 @@ class ControlSerializer(serializers.ModelSerializer):
 class EngagementControlSerializer(serializers.ModelSerializer):
     control_detail = ControlSerializer(source="control", read_only=True)
     test_result_display = serializers.CharField(source="get_test_result_display", read_only=True)
-    effectiveness_display = serializers.CharField(source="get_effectiveness_rating_display", read_only=True)
+    effectiveness_rating_display = serializers.CharField(source="get_effectiveness_rating_display", read_only=True)
     tested_by_detail = UserListSerializer(source="tested_by", read_only=True)
 
     class Meta:
@@ -44,7 +44,7 @@ class EngagementControlSerializer(serializers.ModelSerializer):
             "id", "engagement", "control", "control_detail",
             "test_procedure",
             "test_result", "test_result_display",
-            "effectiveness_rating", "effectiveness_display",
+            "effectiveness_rating", "effectiveness_rating_display",
             "notes",
             "tested_by", "tested_by_detail", "tested_at",
             "created_by", "created_at", "updated_at",

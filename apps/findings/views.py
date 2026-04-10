@@ -70,6 +70,24 @@ class FindingDetailView(generics.RetrieveUpdateDestroyAPIView):
         ).prefetch_related("remediation_actions", "evidence_files")
 
 
+class RemediationActionListView(generics.ListAPIView):
+    """Flat list — all remediation actions (optionally filtered by engagement or owner)."""
+
+    serializer_class = RemediationActionSerializer
+    permission_classes = [IsAuditorOrAbove]
+    filterset_fields = ["status", "owner"]
+    ordering_fields = ["due_date", "status", "created_at"]
+    ordering = ["due_date"]
+
+    def get_queryset(self):
+        qs = RemediationAction.objects.select_related(
+            "finding", "finding__engagement", "owner", "created_by"
+        )
+        if engagement_pk := self.request.query_params.get("engagement"):
+            qs = qs.filter(finding__engagement_id=engagement_pk)
+        return qs
+
+
 class RemediationActionListCreateView(generics.ListCreateAPIView):
     serializer_class = RemediationActionSerializer
     permission_classes = [IsAuditorOrAbove]
