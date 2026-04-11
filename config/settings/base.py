@@ -72,6 +72,7 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "allauth.account.middleware.AccountMiddleware",
     "axes.middleware.AxesMiddleware",
+    "apps.core.middleware.AuditContextMiddleware",
     "apps.core.middleware.AuditLogMiddleware",
 ]
 

@@ -172,3 +172,97 @@ class TestAuditLogList:
         manager_client.post(BP_URL, {"name": "Logged Process"})
         after = AuditLog.objects.count()
         assert after > before
+
+    def test_log_entry_has_entity_id(self, manager_client):
+        """
+        Log entries produced for signal-covered entities must have a non-empty
+        entity_id (populated by the signal handler, not the middleware).
+        """
+        from apps.core.models import AuditLog
+
+        # Risk is signal-covered; entity_id should be the risk's UUID.
+        AuditLog.objects.all().delete()
+        resp = manager_client.post(
+            "/api/v1/risks/",
+            {
+                "name": "ID Test Risk",
+                "description": "verify entity_id",
+                "category": "operational",
+                "inherent_likelihood": 1,
+                "inherent_impact": 1,
+            },
+        )
+        assert resp.status_code == 201
+        log = AuditLog.objects.filter(entity_type="risk", action="create").latest("timestamp")
+        assert log.entity_id != "", "entity_id must be the risk UUID"
+        assert log.entity_id == str(resp.data["id"])
+
+    def test_log_entry_has_entity_name(self, manager_client):
+        """Log entries must carry a human-readable entity_name."""
+        from apps.core.models import AuditLog
+
+        AuditLog.objects.all().delete()
+        resp = manager_client.post(
+            "/api/v1/risks/",
+            {
+                "name": "Named Risk Entry",
+                "description": "verify entity_name",
+                "category": "operational",
+                "inherent_likelihood": 1,
+                "inherent_impact": 1,
+            },
+        )
+        assert resp.status_code == 201
+        log = AuditLog.objects.filter(entity_type="risk", action="create").latest("timestamp")
+        assert "Named Risk Entry" in log.entity_name
+
+    def test_approval_decision_logs_approve_event(self, manager_client):
+        """
+        POST /api/v1/approvals/<pk>/decision/ {decision: approved} must produce
+        an AuditLog entry with action='approve'.
+        """
+        from apps.core.models import AuditLog
+        from conftest import ApprovalRequestFactory, UserFactory
+
+        approver = UserFactory(role="audit_manager")
+        approval = ApprovalRequestFactory(approver=approver, status="pending")
+
+        # Use the approver's client
+        from rest_framework.test import APIClient
+        client = APIClient()
+        client.force_authenticate(user=approver)
+
+        AuditLog.objects.all().delete()
+        resp = client.post(
+            f"/api/v1/approvals/{approval.pk}/decision/",
+            {"decision": "approved", "review_notes": "LGTM"},
+        )
+        assert resp.status_code == 200, resp.data
+
+        log = AuditLog.objects.filter(action="approve").latest("timestamp")
+        assert log.entity_type == "approvalrequest"
+        assert log.entity_id == str(approval.pk)
+        assert log.new_values["decision"] == "approved"
+
+    def test_approval_decision_logs_reject_event(self, manager_client):
+        """POST with decision=rejected must produce action='reject' log."""
+        from apps.core.models import AuditLog
+        from conftest import ApprovalRequestFactory, UserFactory
+
+        approver = UserFactory(role="audit_manager")
+        approval = ApprovalRequestFactory(approver=approver, status="pending")
+
+        from rest_framework.test import APIClient
+        client = APIClient()
+        client.force_authenticate(user=approver)
+
+        AuditLog.objects.all().delete()
+        resp = client.post(
+            f"/api/v1/approvals/{approval.pk}/decision/",
+            {"decision": "rejected", "review_notes": "Needs more work"},
+        )
+        assert resp.status_code == 200, resp.data
+
+        log = AuditLog.objects.filter(action="reject").latest("timestamp")
+        assert log.entity_type == "approvalrequest"
+        assert log.new_values["decision"] == "rejected"

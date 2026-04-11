@@ -319,4 +319,14 @@ class ApprovalDecisionView(APIView):
         approval.reviewed_at = timezone.now()
         approval.save(update_fields=["status", "review_notes", "reviewed_at"])
 
+        # Explicit hook: log the semantic approve/reject event so auditors see
+        # the decision with its entity context, not just a field-diff update.
+        try:
+            from apps.core import audit as _audit
+            _audit.log_approval_decision(
+                approval, decision, user=request.user, request=request
+            )
+        except Exception:
+            pass  # audit failure must never break the real response
+
         return Response(ApprovalRequestSerializer(approval).data)
