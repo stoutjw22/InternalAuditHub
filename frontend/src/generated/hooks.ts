@@ -1,6 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // React Query hooks for the Internal Audit Hub Django REST API.
-// Each hook wraps a DRF endpoint and returns standard TanStack Query objects.
+// Transformation layer: maps Django API responses to Dataverse-shaped types so
+// all page components work without modification.
 // ─────────────────────────────────────────────────────────────────────────────
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api-client";
@@ -9,21 +10,29 @@ import type {
   AuditEngagement,
   AuditEngagementList,
   AuditLog,
+  AuditManager,
   AuditReport,
   AuditReportList,
   AuditReportTemplate,
   AuditTask,
+  AuditUser,
   BusinessObjective,
   BusinessProcess,
   Control,
+  ControlOwner,
+  EngagementAuditor,
+  EngagementAuditorRoleKey,
   EngagementControl,
   EngagementRisk,
   Evidence,
   Finding,
   FindingListItem,
+  FindingOwner,
+  LoginResponse,
   PaginatedResponse,
   RemediationAction,
   Risk,
+  RiskOwner,
   UserListItem,
   UserProfile,
 } from "./models";
@@ -49,43 +58,89 @@ async function del(url: string): Promise<void> {
   await apiClient.delete(url);
 }
 
+/** Unwrap DRF paginated response or pass through a plain array. */
+function unwrap<T>(response: PaginatedResponse<T> | T[]): T[] {
+  return Array.isArray(response) ? response : response.results;
+}
+
 // ── Query key factories ───────────────────────────────────────────────────────
 export const QK = {
-  users: (params?: object) => ["users", params],
-  usersByRole: (role: string) => ["users", "role", role],
-  businessProcesses: () => ["business-processes"],
-  businessProcess: (id: string) => ["business-processes", id],
-  businessObjectives: (params?: object) => ["business-objectives", params],
-  businessObjective: (id: string) => ["business-objectives", id],
-  auditLogs: (params?: object) => ["audit-logs", params],
-  engagements: (params?: object) => ["engagements", params],
-  engagement: (id: string) => ["engagements", id],
-  engagementAuditors: (engId: string) => ["engagements", engId, "auditors"],
-  engagementTasks: (engId: string) => ["engagements", engId, "tasks"],
-  risks: (params?: object) => ["risks", params],
-  risk: (id: string) => ["risks", id],
-  engagementRisks: (engId: string) => ["engagements", engId, "risks"],
-  controls: (params?: object) => ["controls", params],
-  control: (id: string) => ["controls", id],
-  engagementControls: (engId: string) => ["engagements", engId, "controls"],
-  findings: (params?: object) => ["findings", params],
-  finding: (id: string) => ["findings", id],
-  engagementFindings: (engId: string) => ["engagements", engId, "findings"],
-  remediations: (params?: object) => ["remediations", params],
-  findingRemediations: (findingId: string) => ["findings", findingId, "remediations"],
-  evidence: (findingId: string) => ["findings", findingId, "evidence"],
-  engagementEvidence: (engId: string) => ["engagements", engId, "evidence"],
-  approvals: (params?: object) => ["approvals", params],
-  approval: (id: string) => ["approvals", id],
-  reportTemplates: (params?: object) => ["report-templates", params],
-  reportTemplate: (id: string) => ["report-templates", id],
-  reports: (params?: object) => ["reports", params],
-  report: (id: string) => ["reports", id],
-  engagementReports: (engId: string) => ["engagements", engId, "reports"],
+  // Auth
+  me: () => ["me"] as const,
+  // Users (generic)
+  users: (params?: object) => ["users", params] as const,
+  usersByRole: (role: string) => ["users", "role", role] as const,
+  // Role-typed user lists
+  auditUsers: () => ["audit-users"] as const,
+  auditManagers: () => ["audit-managers"] as const,
+  riskOwners: () => ["risk-owners"] as const,
+  controlOwners: () => ["control-owners"] as const,
+  findingOwners: () => ["finding-owners"] as const,
+  // Core
+  businessProcesses: () => ["business-processes"] as const,
+  businessProcess: (id: string) => ["business-processes", id] as const,
+  businessObjectives: (params?: object) => ["business-objectives", params] as const,
+  businessObjective: (id: string) => ["business-objectives", id] as const,
+  auditLogs: (params?: object) => ["audit-logs", params] as const,
+  // Engagements
+  engagements: (params?: object) => ["engagements", params] as const,
+  engagement: (id: string) => ["engagements", id] as const,
+  engagementAuditors: (engId: string) => ["engagements", engId, "auditors"] as const,
+  engagementAuditorsFlat: () => ["engagement-auditors"] as const,
+  engagementTasks: (engId: string) => ["engagements", engId, "tasks"] as const,
+  // Risks
+  risks: (params?: object) => ["risks", params] as const,
+  risk: (id: string) => ["risks", id] as const,
+  engagementRisks: (engId: string) => ["engagements", engId, "risks"] as const,
+  engagementRisksFlat: () => ["engagement-risks"] as const,
+  // Controls
+  controls: (params?: object) => ["controls", params] as const,
+  control: (id: string) => ["controls", id] as const,
+  engagementControls: (engId: string) => ["engagements", engId, "controls"] as const,
+  engagementControlsFlat: () => ["engagement-controls"] as const,
+  // Findings
+  findings: (params?: object) => ["findings", params] as const,
+  finding: (id: string) => ["findings", id] as const,
+  engagementFindings: (engId: string) => ["engagements", engId, "findings"] as const,
+  // Remediations & Evidence
+  remediations: (params?: object) => ["remediations", params] as const,
+  findingRemediations: (findingId: string) => ["findings", findingId, "remediations"] as const,
+  evidence: (findingId: string) => ["findings", findingId, "evidence"] as const,
+  evidenceFlat: (params?: object) => ["evidence", params] as const,
+  engagementEvidence: (engId: string) => ["engagements", engId, "evidence"] as const,
+  // Approvals
+  approvals: (params?: object) => ["approvals", params] as const,
+  approval: (id: string) => ["approvals", id] as const,
+  // Reports
+  reportTemplates: (params?: object) => ["report-templates", params] as const,
+  reportTemplate: (id: string) => ["report-templates", id] as const,
+  reports: (params?: object) => ["reports", params] as const,
+  report: (id: string) => ["reports", id] as const,
+  engagementReports: (engId: string) => ["engagements", engId, "reports"] as const,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ACCOUNTS
+// AUTH
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function useLogin() {
+  return useMutation({
+    mutationFn: ({ email, password }: { email: string; password: string }) =>
+      post<LoginResponse>("/auth/token/", { email, password }),
+  });
+}
+
+export function useLogout() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (refresh: string) =>
+      post<void>("/auth/token/blacklist/", { refresh }),
+    onSuccess: () => qc.clear(),
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ACCOUNTS — Generic user endpoints
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function useUserList(params?: Record<string, unknown>) {
@@ -104,7 +159,7 @@ export function useUsersByRole(role: "auditors" | "managers" | "risk-owners" | "
 
 export function useCurrentUser() {
   return useQuery({
-    queryKey: ["me"],
+    queryKey: QK.me(),
     queryFn: () => get<UserProfile>("/auth/me/"),
     staleTime: Infinity,
   });
@@ -114,7 +169,7 @@ export function useUpdateProfile() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (data: Partial<UserProfile>) => patch<UserProfile>("/auth/me/", data),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["me"] }); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: QK.me() }); },
   });
 }
 
@@ -122,6 +177,255 @@ export function useChangePassword() {
   return useMutation({
     mutationFn: (data: { old_password: string; new_password: string; new_password_confirm: string }) =>
       post<void>("/auth/password/change/", data),
+  });
+}
+
+// ── Role-typed user hooks (Dataverse transformation layer) ────────────────────
+// Each hook fetches UserListItem[] from a Django role-slug endpoint and maps to
+// the Dataverse-shaped type (AuditUser, AuditManager, etc.) that pages expect.
+
+export function useAuditUserList() {
+  return useQuery({
+    queryKey: QK.auditUsers(),
+    queryFn: async () => {
+      const users = await get<UserListItem[]>("/auth/users/auditors/");
+      return users.map((u): AuditUser => ({
+        id: u.id,
+        auditusername: u.full_name,
+        email: u.email,
+      }));
+    },
+  });
+}
+
+export function useCreateAuditUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: Omit<AuditUser, "id">) =>
+      post<UserListItem>("/auth/register/", {
+        username: data.auditusername,
+        email: data.email,
+        phone: data.phone,
+        role: "auditor",
+      }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: QK.auditUsers() }); },
+  });
+}
+
+export function useUpdateAuditUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, changedFields }: { id: string; changedFields: Partial<AuditUser> }) =>
+      patch<UserListItem>(`/auth/users/${id}/`, {
+        full_name: changedFields.auditusername,
+        email: changedFields.email,
+        phone: changedFields.phone,
+      }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: QK.auditUsers() }); },
+  });
+}
+
+export function useDeleteAuditUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => del(`/auth/users/${id}/`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: QK.auditUsers() }); },
+  });
+}
+
+export function useAuditManagerList() {
+  return useQuery({
+    queryKey: QK.auditManagers(),
+    queryFn: async () => {
+      const users = await get<UserListItem[]>("/auth/users/managers/");
+      return users.map((u): AuditManager => ({
+        id: u.id,
+        auditmanagername: u.full_name,
+        email: u.email,
+      }));
+    },
+  });
+}
+
+export function useCreateAuditManager() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: Omit<AuditManager, "id">) =>
+      post<UserListItem>("/auth/register/", {
+        username: data.auditmanagername,
+        email: data.email,
+        phone: data.phone,
+        role: "manager",
+      }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: QK.auditManagers() }); },
+  });
+}
+
+export function useUpdateAuditManager() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, changedFields }: { id: string; changedFields: Partial<AuditManager> }) =>
+      patch<UserListItem>(`/auth/users/${id}/`, {
+        full_name: changedFields.auditmanagername,
+        email: changedFields.email,
+        phone: changedFields.phone,
+      }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: QK.auditManagers() }); },
+  });
+}
+
+export function useDeleteAuditManager() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => del(`/auth/users/${id}/`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: QK.auditManagers() }); },
+  });
+}
+
+export function useRiskOwnerList() {
+  return useQuery({
+    queryKey: QK.riskOwners(),
+    queryFn: async () => {
+      const users = await get<UserListItem[]>("/auth/users/risk-owners/");
+      return users.map((u): RiskOwner => ({
+        id: u.id,
+        riskownername: u.full_name,
+        email: u.email,
+      }));
+    },
+  });
+}
+
+export function useCreateRiskOwner() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: Omit<RiskOwner, "id">) =>
+      post<UserListItem>("/auth/register/", {
+        username: data.riskownername,
+        email: data.email,
+        phone: data.phone,
+        role: "risk_owner",
+      }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: QK.riskOwners() }); },
+  });
+}
+
+export function useUpdateRiskOwner() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, changedFields }: { id: string; changedFields: Partial<RiskOwner> }) =>
+      patch<UserListItem>(`/auth/users/${id}/`, {
+        full_name: changedFields.riskownername,
+        email: changedFields.email,
+        phone: changedFields.phone,
+      }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: QK.riskOwners() }); },
+  });
+}
+
+export function useDeleteRiskOwner() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => del(`/auth/users/${id}/`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: QK.riskOwners() }); },
+  });
+}
+
+export function useControlOwnerList() {
+  return useQuery({
+    queryKey: QK.controlOwners(),
+    queryFn: async () => {
+      const users = await get<UserListItem[]>("/auth/users/control-owners/");
+      return users.map((u): ControlOwner => ({
+        id: u.id,
+        controlownername: u.full_name,
+        email: u.email,
+      }));
+    },
+  });
+}
+
+export function useCreateControlOwner() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: Omit<ControlOwner, "id">) =>
+      post<UserListItem>("/auth/register/", {
+        username: data.controlownername,
+        email: data.email,
+        phone: data.phone,
+        role: "control_owner",
+      }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: QK.controlOwners() }); },
+  });
+}
+
+export function useUpdateControlOwner() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, changedFields }: { id: string; changedFields: Partial<ControlOwner> }) =>
+      patch<UserListItem>(`/auth/users/${id}/`, {
+        full_name: changedFields.controlownername,
+        email: changedFields.email,
+        phone: changedFields.phone,
+      }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: QK.controlOwners() }); },
+  });
+}
+
+export function useDeleteControlOwner() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => del(`/auth/users/${id}/`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: QK.controlOwners() }); },
+  });
+}
+
+export function useFindingOwnerList() {
+  return useQuery({
+    queryKey: QK.findingOwners(),
+    queryFn: async () => {
+      const users = await get<UserListItem[]>("/auth/users/finding-owners/");
+      return users.map((u): FindingOwner => ({
+        id: u.id,
+        findingownername: u.full_name,
+        email: u.email,
+      }));
+    },
+  });
+}
+
+export function useCreateFindingOwner() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: Omit<FindingOwner, "id">) =>
+      post<UserListItem>("/auth/register/", {
+        username: data.findingownername,
+        email: data.email,
+        phone: data.phone,
+        role: "finding_owner",
+      }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: QK.findingOwners() }); },
+  });
+}
+
+export function useUpdateFindingOwner() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, changedFields }: { id: string; changedFields: Partial<FindingOwner> }) =>
+      patch<UserListItem>(`/auth/users/${id}/`, {
+        full_name: changedFields.findingownername,
+        email: changedFields.email,
+        phone: changedFields.phone,
+      }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: QK.findingOwners() }); },
+  });
+}
+
+export function useDeleteFindingOwner() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => del(`/auth/users/${id}/`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: QK.findingOwners() }); },
   });
 }
 
@@ -155,12 +459,20 @@ export function useCreateBusinessProcess() {
 export function useUpdateBusinessProcess() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, ...data }: Partial<BusinessProcess> & { id: string }) =>
-      patch<BusinessProcess>(`/business-processes/${id}/`, data),
+    mutationFn: ({ id, changedFields }: { id: string; changedFields: Partial<BusinessProcess> }) =>
+      patch<BusinessProcess>(`/business-processes/${id}/`, changedFields),
     onSuccess: (_, { id }) => {
       qc.invalidateQueries({ queryKey: QK.businessProcesses() });
       qc.invalidateQueries({ queryKey: QK.businessProcess(id) });
     },
+  });
+}
+
+export function useDeleteBusinessProcess() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => del(`/business-processes/${id}/`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: QK.businessProcesses() }); },
   });
 }
 
@@ -183,10 +495,19 @@ export function useCreateBusinessObjective() {
   });
 }
 
+export function useDeleteBusinessObjective() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => del(`/business-objectives/${id}/`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["business-objectives"] }); },
+  });
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // CORE — Audit Logs
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Returns a paginated response — pages access .count for pagination controls. */
 export function useAuditLogList(params?: Record<string, unknown>) {
   return useQuery({
     queryKey: QK.auditLogs(params),
@@ -198,10 +519,14 @@ export function useAuditLogList(params?: Record<string, unknown>) {
 // ENGAGEMENTS
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Unwraps DRF pagination — pages default to `[]`. */
 export function useEngagementList(params?: Record<string, unknown>) {
   return useQuery({
     queryKey: QK.engagements(params),
-    queryFn: () => get<PaginatedResponse<AuditEngagementList>>("/engagements/", params),
+    queryFn: async () => {
+      const r = await get<PaginatedResponse<AuditEngagementList> | AuditEngagementList[]>("/engagements/", params);
+      return unwrap(r);
+    },
   });
 }
 
@@ -224,8 +549,8 @@ export function useCreateEngagement() {
 export function useUpdateEngagement() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, ...data }: Partial<AuditEngagement> & { id: string }) =>
-      patch<AuditEngagement>(`/engagements/${id}/`, data),
+    mutationFn: ({ id, changedFields }: { id: string; changedFields: Partial<AuditEngagement> }) =>
+      patch<AuditEngagement>(`/engagements/${id}/`, changedFields),
     onSuccess: (_, { id }) => {
       qc.invalidateQueries({ queryKey: ["engagements"] });
       qc.invalidateQueries({ queryKey: QK.engagement(id) });
@@ -241,36 +566,85 @@ export function useDeleteEngagement() {
   });
 }
 
-// ── Auditors ──────────────────────────────────────────────────────────────────
+// ── Engagement Auditors ───────────────────────────────────────────────────────
 
-export function useEngagementAuditorList(engagementId: string) {
+/** Django auditor record shape from the nested endpoint. */
+interface DjangoAuditorRecord {
+  id: string;
+  engagement?: string;
+  auditor: string;
+  auditor_detail?: UserListItem;
+  role?: string;
+  role_note?: string;
+  assigned_at?: string;
+}
+
+/**
+ * List engagement auditors.
+ * Called without args on dashboard/engagements pages → hits flat /engagement-auditors/.
+ * Called with engagementId → hits nested /engagements/{id}/auditors/.
+ * Transforms Django response to Dataverse EngagementAuditor shape.
+ */
+export function useEngagementAuditorList(engagementId?: string) {
   return useQuery({
-    queryKey: QK.engagementAuditors(engagementId),
-    queryFn: () => get<{ results: { id: string; auditor: string; auditor_detail?: UserListItem; role_note: string; assigned_at: string }[] }>(
-      `/engagements/${engagementId}/auditors/`
-    ),
-    enabled: !!engagementId,
+    queryKey: engagementId
+      ? QK.engagementAuditors(engagementId)
+      : QK.engagementAuditorsFlat(),
+    queryFn: async () => {
+      const url = engagementId
+        ? `/engagements/${engagementId}/auditors/`
+        : "/engagement-auditors/";
+      const response = await get<PaginatedResponse<DjangoAuditorRecord> | DjangoAuditorRecord[]>(url);
+      const items = unwrap(response);
+      return items.map((ea): EngagementAuditor => ({
+        id: ea.id,
+        auditengagement: ea.engagement ? { id: ea.engagement } : undefined,
+        audituser: ea.auditor_detail
+          ? { id: ea.auditor, auditusername: ea.auditor_detail.full_name }
+          : { id: ea.auditor, auditusername: ea.auditor },
+        roleKey: (ea.role ?? ea.role_note ?? undefined) as EngagementAuditorRoleKey | undefined,
+      }));
+    },
+    enabled: engagementId === undefined ? true : !!engagementId,
   });
 }
 
-export function useAddEngagementAuditor(engagementId: string) {
+/**
+ * Add an auditor to an engagement.
+ * Accepts the Dataverse EngagementAuditor shape; translates to Django API format.
+ */
+export function useAddEngagementAuditor() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: { auditor: string; role_note?: string }) =>
-      post(`/engagements/${engagementId}/auditors/`, data),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: QK.engagementAuditors(engagementId) }); },
+    mutationFn: (data: Partial<EngagementAuditor> & { assigneddate?: string; engagementauditorname?: string }) => {
+      const engId = data.auditengagement?.id;
+      if (!engId) throw new Error("auditengagement.id is required");
+      return post(`/engagements/${engId}/auditors/`, {
+        auditor: data.audituser?.id,
+        role_note: data.roleKey ?? "",
+      });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: QK.engagementAuditorsFlat() });
+      qc.invalidateQueries({ queryKey: ["engagements"] });
+    },
   });
 }
 
-export function useRemoveEngagementAuditor(engagementId: string) {
+/** Remove an auditor assignment by its own ID (EngagementAuditor.id). */
+export function useRemoveEngagementAuditor() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (auditorId: string) => del(`/engagements/${engagementId}/auditors/${auditorId}/`),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: QK.engagementAuditors(engagementId) }); },
+    mutationFn: (engagementAuditorId: string) =>
+      del(`/engagement-auditors/${engagementAuditorId}/`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: QK.engagementAuditorsFlat() });
+      qc.invalidateQueries({ queryKey: ["engagements"] });
+    },
   });
 }
 
-// ── Tasks ─────────────────────────────────────────────────────────────────────
+// ── Engagement Tasks ──────────────────────────────────────────────────────────
 
 export function useEngagementTaskList(engagementId: string) {
   return useQuery({
@@ -292,8 +666,8 @@ export function useCreateTask(engagementId: string) {
 export function useUpdateTask(engagementId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, ...data }: Partial<AuditTask> & { id: string }) =>
-      patch<AuditTask>(`/engagements/${engagementId}/tasks/${id}/`, data),
+    mutationFn: ({ id, changedFields }: { id: string; changedFields: Partial<AuditTask> }) =>
+      patch<AuditTask>(`/engagements/${engagementId}/tasks/${id}/`, changedFields),
     onSuccess: () => { qc.invalidateQueries({ queryKey: QK.engagementTasks(engagementId) }); },
   });
 }
@@ -302,10 +676,14 @@ export function useUpdateTask(engagementId: string) {
 // RISKS
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Unwraps DRF pagination — pages default to `[]`. */
 export function useRiskList(params?: Record<string, unknown>) {
   return useQuery({
     queryKey: QK.risks(params),
-    queryFn: () => get<PaginatedResponse<Risk>>("/risks/", params),
+    queryFn: async () => {
+      const r = await get<PaginatedResponse<Risk> | Risk[]>("/risks/", params);
+      return unwrap(r);
+    },
   });
 }
 
@@ -328,8 +706,8 @@ export function useCreateRisk() {
 export function useUpdateRisk() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, ...data }: Partial<Risk> & { id: string }) =>
-      patch<Risk>(`/risks/${id}/`, data),
+    mutationFn: ({ id, changedFields }: { id: string; changedFields: Partial<Risk> }) =>
+      patch<Risk>(`/risks/${id}/`, changedFields),
     onSuccess: (_, { id }) => {
       qc.invalidateQueries({ queryKey: ["risks"] });
       qc.invalidateQueries({ queryKey: QK.risk(id) });
@@ -345,29 +723,43 @@ export function useDeleteRisk() {
   });
 }
 
-export function useEngagementRiskList(engagementId: string) {
+/**
+ * List engagement risks.
+ * Called without args → hits flat /engagement-risks/ (returns all, pages filter client-side).
+ * Called with engagementId → hits nested /engagements/{id}/risks/.
+ */
+export function useEngagementRiskList(engagementId?: string) {
   return useQuery({
-    queryKey: QK.engagementRisks(engagementId),
-    queryFn: () => get<EngagementRisk[]>(`/engagements/${engagementId}/risks/`),
-    enabled: !!engagementId,
+    queryKey: engagementId
+      ? QK.engagementRisks(engagementId)
+      : QK.engagementRisksFlat(),
+    queryFn: async () => {
+      const url = engagementId
+        ? `/engagements/${engagementId}/risks/`
+        : "/engagement-risks/";
+      const r = await get<PaginatedResponse<EngagementRisk> | EngagementRisk[]>(url);
+      return unwrap(r);
+    },
+    enabled: engagementId === undefined ? true : !!engagementId,
   });
 }
 
-export function useAddEngagementRisk(engagementId: string) {
+/** Add a risk to an engagement scope. */
+export function useAddEngagementRisk() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: { risk: string; assessment_notes?: string; is_in_scope?: boolean }) =>
-      post<EngagementRisk>(`/engagements/${engagementId}/risks/`, data),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: QK.engagementRisks(engagementId) }); },
+    mutationFn: (data: Partial<EngagementRisk>) =>
+      post<EngagementRisk>("/engagement-risks/", data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: QK.engagementRisksFlat() }); },
   });
 }
 
-export function useRemoveEngagementRisk(engagementId: string) {
+/** Remove a risk from an engagement scope by EngagementRisk.id. */
+export function useRemoveEngagementRisk() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (engagementRiskId: string) =>
-      del(`/engagements/${engagementId}/risks/${engagementRiskId}/`),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: QK.engagementRisks(engagementId) }); },
+    mutationFn: (id: string) => del(`/engagement-risks/${id}/`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: QK.engagementRisksFlat() }); },
   });
 }
 
@@ -375,10 +767,14 @@ export function useRemoveEngagementRisk(engagementId: string) {
 // CONTROLS
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Unwraps DRF pagination — pages default to `[]`. */
 export function useControlList(params?: Record<string, unknown>) {
   return useQuery({
     queryKey: QK.controls(params),
-    queryFn: () => get<PaginatedResponse<Control>>("/controls/", params),
+    queryFn: async () => {
+      const r = await get<PaginatedResponse<Control> | Control[]>("/controls/", params);
+      return unwrap(r);
+    },
   });
 }
 
@@ -401,8 +797,8 @@ export function useCreateControl() {
 export function useUpdateControl() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, ...data }: Partial<Control> & { id: string }) =>
-      patch<Control>(`/controls/${id}/`, data),
+    mutationFn: ({ id, changedFields }: { id: string; changedFields: Partial<Control> }) =>
+      patch<Control>(`/controls/${id}/`, changedFields),
     onSuccess: (_, { id }) => {
       qc.invalidateQueries({ queryKey: ["controls"] });
       qc.invalidateQueries({ queryKey: QK.control(id) });
@@ -418,29 +814,52 @@ export function useDeleteControl() {
   });
 }
 
-export function useEngagementControlList(engagementId: string) {
+/**
+ * List engagement controls.
+ * Called without args → hits flat /engagement-controls/ (pages filter client-side).
+ * Called with engagementId → hits nested /engagements/{id}/controls/.
+ */
+export function useEngagementControlList(engagementId?: string) {
   return useQuery({
-    queryKey: QK.engagementControls(engagementId),
-    queryFn: () => get<EngagementControl[]>(`/engagements/${engagementId}/controls/`),
-    enabled: !!engagementId,
+    queryKey: engagementId
+      ? QK.engagementControls(engagementId)
+      : QK.engagementControlsFlat(),
+    queryFn: async () => {
+      const url = engagementId
+        ? `/engagements/${engagementId}/controls/`
+        : "/engagement-controls/";
+      const r = await get<PaginatedResponse<EngagementControl> | EngagementControl[]>(url);
+      return unwrap(r);
+    },
+    enabled: engagementId === undefined ? true : !!engagementId,
   });
 }
 
-export function useAddEngagementControl(engagementId: string) {
+/** Add a control to an engagement scope. */
+export function useAddEngagementControl() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (data: Partial<EngagementControl>) =>
-      post<EngagementControl>(`/engagements/${engagementId}/controls/`, data),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: QK.engagementControls(engagementId) }); },
+      post<EngagementControl>("/engagement-controls/", data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: QK.engagementControlsFlat() }); },
   });
 }
 
-export function useUpdateEngagementControl(engagementId: string) {
+export function useUpdateEngagementControl() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, ...data }: Partial<EngagementControl> & { id: string }) =>
-      patch<EngagementControl>(`/engagements/${engagementId}/controls/${id}/`, data),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: QK.engagementControls(engagementId) }); },
+    mutationFn: ({ id, changedFields }: { id: string; changedFields: Partial<EngagementControl> }) =>
+      patch<EngagementControl>(`/engagement-controls/${id}/`, changedFields),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: QK.engagementControlsFlat() }); },
+  });
+}
+
+/** Remove a control from an engagement scope by EngagementControl.id. */
+export function useRemoveEngagementControl() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => del(`/engagement-controls/${id}/`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: QK.engagementControlsFlat() }); },
   });
 }
 
@@ -448,10 +867,14 @@ export function useUpdateEngagementControl(engagementId: string) {
 // FINDINGS
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Unwraps DRF pagination — pages default to `[]`. */
 export function useFindingList(params?: Record<string, unknown>) {
   return useQuery({
     queryKey: QK.findings(params),
-    queryFn: () => get<PaginatedResponse<FindingListItem>>("/findings/", params),
+    queryFn: async () => {
+      const r = await get<PaginatedResponse<FindingListItem> | FindingListItem[]>("/findings/", params);
+      return unwrap(r);
+    },
   });
 }
 
@@ -482,8 +905,8 @@ export function useCreateFinding() {
 export function useUpdateFinding() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, ...data }: Partial<Finding> & { id: string }) =>
-      patch<Finding>(`/findings/${id}/`, data),
+    mutationFn: ({ id, changedFields }: { id: string; changedFields: Partial<Finding> }) =>
+      patch<Finding>(`/findings/${id}/`, changedFields),
     onSuccess: (_, { id }) => {
       qc.invalidateQueries({ queryKey: ["findings"] });
       qc.invalidateQueries({ queryKey: QK.finding(id) });
@@ -499,15 +922,22 @@ export function useDeleteFinding() {
   });
 }
 
-// ── Remediation Actions ───────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// REMEDIATION ACTIONS
+// ─────────────────────────────────────────────────────────────────────────────
 
+/** Flat list of all remediations — pages default to `[]` and filter client-side. */
 export function useRemediationList(params?: Record<string, unknown>) {
   return useQuery({
     queryKey: QK.remediations(params),
-    queryFn: () => get<PaginatedResponse<RemediationAction>>("/remediations/", params),
+    queryFn: async () => {
+      const r = await get<PaginatedResponse<RemediationAction> | RemediationAction[]>("/remediations/", params);
+      return unwrap(r);
+    },
   });
 }
 
+/** Nested remediations scoped to a specific finding. */
 export function useFindingRemediationList(findingId: string) {
   return useQuery({
     queryKey: QK.findingRemediations(findingId),
@@ -516,32 +946,40 @@ export function useFindingRemediationList(findingId: string) {
   });
 }
 
-export function useCreateRemediation(findingId: string) {
+/** Create a remediation via the flat endpoint (no findingId closure required). */
+export function useCreateRemediation() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (data: Partial<RemediationAction>) =>
-      post<RemediationAction>(`/findings/${findingId}/remediations/`, data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: QK.findingRemediations(findingId) });
-      qc.invalidateQueries({ queryKey: ["remediations"] });
-    },
+      post<RemediationAction>("/remediations/", data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["remediations"] }); },
   });
 }
 
-export function useUpdateRemediation(findingId: string) {
+/** Update a remediation via the flat endpoint. Uses `changedFields` pattern. */
+export function useUpdateRemediation() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, ...data }: Partial<RemediationAction> & { id: string }) =>
-      patch<RemediationAction>(`/findings/${findingId}/remediations/${id}/`, data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: QK.findingRemediations(findingId) });
-      qc.invalidateQueries({ queryKey: ["remediations"] });
-    },
+    mutationFn: ({ id, changedFields }: { id: string; changedFields: Partial<RemediationAction> }) =>
+      patch<RemediationAction>(`/remediations/${id}/`, changedFields),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["remediations"] }); },
   });
 }
 
-// ── Evidence ──────────────────────────────────────────────────────────────────
+/** Delete a remediation via the flat endpoint. */
+export function useDeleteRemediation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => del(`/remediations/${id}/`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["remediations"] }); },
+  });
+}
 
+// ─────────────────────────────────────────────────────────────────────────────
+// EVIDENCE
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Nested evidence scoped to a specific finding. */
 export function useFindingEvidenceList(findingId: string) {
   return useQuery({
     queryKey: QK.evidence(findingId),
@@ -550,6 +988,7 @@ export function useFindingEvidenceList(findingId: string) {
   });
 }
 
+/** Upload evidence as multipart/form-data to the nested finding endpoint. */
 export function useUploadEvidence(findingId: string) {
   const qc = useQueryClient();
   return useMutation({
@@ -563,6 +1002,7 @@ export function useUploadEvidence(findingId: string) {
   });
 }
 
+/** Delete a specific evidence file from a finding. */
 export function useDeleteEvidence(findingId: string) {
   const qc = useQueryClient();
   return useMutation({
@@ -572,12 +1012,38 @@ export function useDeleteEvidence(findingId: string) {
   });
 }
 
-// ── Approval Requests ─────────────────────────────────────────────────────────
+/** Flat evidence list — pages default to `[]`. */
+export function useEvidenceList(params?: Record<string, unknown>) {
+  return useQuery({
+    queryKey: QK.evidenceFlat(params),
+    queryFn: async () => {
+      const r = await get<PaginatedResponse<Evidence> | Evidence[]>("/evidence/", params);
+      return unwrap(r);
+    },
+  });
+}
 
+/** Create evidence via the flat endpoint (JSON payload, no file upload). */
+export function useCreateEvidence() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: Partial<Evidence>) => post<Evidence>("/evidence/", data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: QK.evidenceFlat() }); },
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// APPROVAL REQUESTS
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Unwraps DRF pagination — pages default to `[]`. */
 export function useApprovalList(params?: Record<string, unknown>) {
   return useQuery({
     queryKey: QK.approvals(params),
-    queryFn: () => get<PaginatedResponse<ApprovalRequest>>("/approvals/", params),
+    queryFn: async () => {
+      const r = await get<PaginatedResponse<ApprovalRequest> | ApprovalRequest[]>("/approvals/", params);
+      return unwrap(r);
+    },
   });
 }
 
@@ -593,6 +1059,26 @@ export function useCreateApproval() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (data: Partial<ApprovalRequest>) => post<ApprovalRequest>("/approvals/", data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["approvals"] }); },
+  });
+}
+
+export function useUpdateApproval() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, changedFields }: { id: string; changedFields: Partial<ApprovalRequest> }) =>
+      patch<ApprovalRequest>(`/approvals/${id}/`, changedFields),
+    onSuccess: (_, { id }) => {
+      qc.invalidateQueries({ queryKey: ["approvals"] });
+      qc.invalidateQueries({ queryKey: QK.approval(id) });
+    },
+  });
+}
+
+export function useDeleteApproval() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => del(`/approvals/${id}/`),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["approvals"] }); },
   });
 }
@@ -637,8 +1123,8 @@ export function useCreateReportTemplate() {
 export function useUpdateReportTemplate() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, ...data }: Partial<AuditReportTemplate> & { id: string }) =>
-      patch<AuditReportTemplate>(`/report-templates/${id}/`, data),
+    mutationFn: ({ id, changedFields }: { id: string; changedFields: Partial<AuditReportTemplate> }) =>
+      patch<AuditReportTemplate>(`/report-templates/${id}/`, changedFields),
     onSuccess: (_, { id }) => {
       qc.invalidateQueries({ queryKey: ["report-templates"] });
       qc.invalidateQueries({ queryKey: QK.reportTemplate(id) });
@@ -654,10 +1140,14 @@ export function useDeleteReportTemplate() {
   });
 }
 
+/** Unwraps DRF pagination — pages default to `[]`. */
 export function useReportList(params?: Record<string, unknown>) {
   return useQuery({
     queryKey: QK.reports(params),
-    queryFn: () => get<PaginatedResponse<AuditReportList>>("/reports/", params),
+    queryFn: async () => {
+      const r = await get<PaginatedResponse<AuditReportList> | AuditReportList[]>("/reports/", params);
+      return unwrap(r);
+    },
   });
 }
 
@@ -688,8 +1178,8 @@ export function useCreateReport() {
 export function useUpdateReport() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, ...data }: Partial<AuditReport> & { id: string }) =>
-      patch<AuditReport>(`/reports/${id}/`, data),
+    mutationFn: ({ id, changedFields }: { id: string; changedFields: Partial<AuditReport> }) =>
+      patch<AuditReport>(`/reports/${id}/`, changedFields),
     onSuccess: (_, { id }) => {
       qc.invalidateQueries({ queryKey: ["reports"] });
       qc.invalidateQueries({ queryKey: QK.report(id) });
@@ -717,34 +1207,49 @@ export function useDeleteReport() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ALIAS EXPORTS — original PowerApps hook name compatibility
-// These allow original page components that used Dataverse-generated hook names
-// to work alongside the Django-backed hooks above without any code changes.
+// ALIAS EXPORTS — Dataverse/PowerApps hook name compatibility
+// These allow page components that use original Dataverse-generated hook names
+// to work with the Django-backed hooks above without any code changes.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Alias: useAuditEngagementList → useEngagementList */
-export const useAuditEngagementList = useEngagementList;
+// ── Engagements ───────────────────────────────────────────────────────────────
+export const useAuditEngagementList     = useEngagementList;
+export const useAuditEngagement         = useEngagement;
+export const useCreateAuditEngagement   = useCreateEngagement;
+export const useUpdateAuditEngagement   = useUpdateEngagement;
+export const useDeleteAuditEngagement   = useDeleteEngagement;
 
-/** Alias: useAuditEngagement → useEngagement */
-export const useAuditEngagement = useEngagement;
+// ── Approval Requests ─────────────────────────────────────────────────────────
+export const useApprovalRequestList     = useApprovalList;
+export const useApprovalRequest         = useApproval;
+export const useCreateApprovalRequest   = useCreateApproval;
+export const useUpdateApprovalRequest   = useUpdateApproval;
+export const useDeleteApprovalRequest   = useDeleteApproval;
 
-/** Alias: useApprovalRequestList → useApprovalList */
-export const useApprovalRequestList = useApprovalList;
+// ── Remediation Actions ───────────────────────────────────────────────────────
+export const useRemediationActionList    = useRemediationList;
+export const useCreateRemediationAction  = useCreateRemediation;
+export const useUpdateRemediationAction  = useUpdateRemediation;
+export const useDeleteRemediationAction  = useDeleteRemediation;
 
-/** Alias: useApprovalRequest → useApproval */
-export const useApprovalRequest = useApproval;
+// ── Reports ───────────────────────────────────────────────────────────────────
+export const useAuditReportList          = useReportList;
+export const useAuditReport              = useReport;
+export const useCreateAuditReport        = useCreateReport;
+export const useUpdateAuditReport        = useUpdateReport;
+export const useDeleteAuditReport        = useDeleteReport;
 
-/** Alias: useRemediationActionList → useRemediationList */
-export const useRemediationActionList = useRemediationList;
+// ── Report Templates ──────────────────────────────────────────────────────────
+export const useAuditReportTemplateList   = useReportTemplateList;
+export const useAuditReportTemplate       = useReportTemplate;
+export const useCreateAuditReportTemplate = useCreateReportTemplate;
+export const useUpdateAuditReportTemplate = useUpdateReportTemplate;
+export const useDeleteAuditReportTemplate = useDeleteReportTemplate;
 
-/** Alias: useAuditReportList → useReportList */
-export const useAuditReportList = useReportList;
-
-/** Alias: useAuditReport → useReport */
-export const useAuditReport = useReport;
-
-/** Alias: useAuditReportTemplateList → useReportTemplateList */
-export const useAuditReportTemplateList = useReportTemplateList;
-
-/** Alias: useAuditReportTemplate → useReportTemplate */
-export const useAuditReportTemplate = useReportTemplate;
+// ── Engagement Relations ──────────────────────────────────────────────────────
+export const useCreateEngagementAuditor = useAddEngagementAuditor;
+export const useDeleteEngagementAuditor = useRemoveEngagementAuditor;
+export const useCreateEngagementRisk    = useAddEngagementRisk;
+export const useDeleteEngagementRisk    = useRemoveEngagementRisk;
+export const useCreateEngagementControl = useAddEngagementControl;
+export const useDeleteEngagementControl = useRemoveEngagementControl;

@@ -373,3 +373,74 @@ export interface LoginResponse {
     role: string;
   };
 }
+
+// ── Generic pagination wrapper (DRF PageNumberPagination) ────────────────────
+
+export interface PaginatedResponse<T> {
+  count: number;
+  next: string | null;
+  previous: string | null;
+  results: T[];
+}
+
+// ── Django user shapes (returned by /auth/me/ and /auth/users/) ──────────────
+
+export interface UserProfile {
+  id: UUID;
+  email: string;
+  username: string;
+  first_name: string;
+  last_name: string;
+  full_name: string;
+  role: string;
+  department?: string;
+  title?: string;
+  phone?: string;
+  avatar?: string;
+  is_azure_user: boolean;
+  is_active: boolean;
+  date_joined: ISODateTime;
+  last_login?: ISODateTime;
+}
+
+/** Lightweight user shape returned by GET /auth/users/ and role-slug endpoints. */
+export interface UserListItem {
+  id: UUID;
+  email: string;
+  full_name: string;
+  role: string;
+  department?: string;
+}
+
+// ── Engagement task ───────────────────────────────────────────────────────────
+
+export interface AuditTask {
+  id: UUID;
+  engagement: UUID;
+  name: string;
+  description?: string;
+  status: string;
+  status_display: string;
+  priority: string;
+  priority_display: string;
+  assigned_to?: UUID;
+  assigned_to_detail?: UserListItem;
+  due_date?: ISODate;
+  escalation_flag: boolean;
+  completed_at?: ISODateTime;
+  notes?: string;
+  created_by?: UUID;
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+}
+
+// ── Lightweight list-view shapes ─────────────────────────────────────────────
+// These are identical to their full counterparts; the aliases let hooks.ts
+// explicitly signal which serializer shape is expected.
+
+// eslint-disable-next-line @typescript-eslint/no-empty-interface
+export interface AuditEngagementList extends AuditEngagement {}
+// eslint-disable-next-line @typescript-eslint/no-empty-interface
+export interface AuditReportList extends AuditReport {}
+// eslint-disable-next-line @typescript-eslint/no-empty-interface
+export interface FindingListItem extends Finding {}
