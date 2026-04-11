@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Outlet, NavLink, useLocation } from 'react-router-dom';
+import React, { useState } from 'react';
+import { NavLink, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Shield,
@@ -101,7 +101,7 @@ function NavContent({ onNavigate }: { onNavigate?: () => void }) {
   );
 }
 
-export default function Layout() {
+export default function Layout({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
@@ -144,7 +144,7 @@ export default function Layout() {
             transition={{ duration: 0.2, ease: 'easeOut' as const }}
             className="min-h-screen"
           >
-            <Outlet />
+            {children}
           </motion.div>
         </AnimatePresence>
       </main>

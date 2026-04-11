@@ -226,7 +226,7 @@ const EvidenceTypeEnum = z.enum([
   "workpaper", "screenshot", "document", "spreadsheet", "email", "photo", "other",
 ]);
 
-export const EvidenceSchema = z.object({
+const EvidenceBaseSchema = z.object({
   id: uuidField,
   finding: optionalUuid,
   engagement: optionalUuid,
@@ -235,12 +235,18 @@ export const EvidenceSchema = z.object({
   description: z.string().optional(),
   evidence_type: EvidenceTypeEnum,
   sharepoint_url: optionalUrl,
-}).refine(
-  (d) => d.finding || d.engagement || d.task,
-  { message: "Evidence must be linked to a finding, engagement, or task" }
-);
+});
 
-export const CreateEvidenceSchema = EvidenceSchema.omit({ id: true });
+const evidenceLinkRefinement = (d: { finding?: string | null; engagement?: string | null; task?: string | null }) =>
+  !!(d.finding || d.engagement || d.task);
+
+export const EvidenceSchema = EvidenceBaseSchema.refine(evidenceLinkRefinement, {
+  message: "Evidence must be linked to a finding, engagement, or task",
+});
+
+export const CreateEvidenceSchema = EvidenceBaseSchema.omit({ id: true }).refine(evidenceLinkRefinement, {
+  message: "Evidence must be linked to a finding, engagement, or task",
+});
 
 export type EvidenceInput = z.infer<typeof EvidenceSchema>;
 export type CreateEvidenceInput = z.infer<typeof CreateEvidenceSchema>;

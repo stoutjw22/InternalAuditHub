@@ -72,7 +72,16 @@ import {
 import type { Finding, FindingSeverityKey } from '@/generated/models';
 import { FindingSeverityKeyToLabel } from '@/generated/models';
 
-// ── Severity options ──────────────────────────────────────────────────────────
+// ── Severity helpers ──────────────────────────────────────────────────────────
+function getSeverityColor(key?: FindingSeverityKey): string {
+  switch (key) {
+    case 'SeverityKey2': return 'bg-destructive/10 text-destructive border-destructive/30';
+    case 'SeverityKey1': return 'bg-yellow-500/10 text-yellow-600 border-yellow-500/30';
+    case 'SeverityKey0': return 'bg-accent/10 text-accent border-accent/30';
+    default: return 'bg-muted/10 text-muted-foreground border-muted/30';
+  }
+}
+
 const severityOptions: { key: FindingSeverityKey; label: string }[] = [
   { key: 'SeverityKey0', label: 'Low' },
   { key: 'SeverityKey1', label: 'Medium' },

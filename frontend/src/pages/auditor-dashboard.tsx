@@ -151,7 +151,7 @@ export default function AuditorDashboardPage() {
   // Overdue remediations (filtered)
   const overdueRemediations = filteredRemediations.filter(r => {
     if (r.statusKey === 'StatusKey2') return false;
-    return new Date(r.duedate) < new Date();
+    return !!r.duedate && new Date(r.duedate) < new Date();
   });
 
   // Engagement metrics
@@ -518,7 +518,7 @@ export default function AuditorDashboardPage() {
                           </TableCell>
                           <TableCell>
                             <Badge variant="outline" className="text-xs bg-destructive/10 text-destructive border-destructive/30">
-                              {new Date(rem.duedate).toLocaleDateString()}
+                              {rem.duedate ? new Date(rem.duedate).toLocaleDateString() : '—'}
                             </Badge>
                           </TableCell>
                           <TableCell className="text-muted-foreground text-sm">

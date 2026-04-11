@@ -350,12 +350,11 @@ export default function EngagementsPage() {
   const controlScopeForm = useForm<ControlScopeFormData>();
 
   // Filter data for selected engagement
-  const engagementProcesses = selectedEngagement
-    ? allProcesses.filter(p => p.engagementname?.id === selectedEngagement.id)
-    : [];
-  const engagementObjectives = selectedEngagement
-    ? allObjectives.filter(o => o.engagementname?.id === selectedEngagement.id)
-    : [];
+  // BusinessProcess/BusinessObjective are global entities; Django's model has the
+  // FK on AuditEngagement, not the other way round, so we show all and let the
+  // user pick.
+  const engagementProcesses = selectedEngagement ? allProcesses : [];
+  const engagementObjectives = selectedEngagement ? allObjectives : [];
 
   // Get engagement risks (linked to objectives in this engagement)
   const engagementRisks = useMemo(() => {
@@ -399,8 +398,8 @@ export default function EngagementsPage() {
   // Check if remediation is overdue
   const isOverdue = (remediation: RemediationAction) => {
     if (remediation.statusKey === 'StatusKey2') return false; // Completed
-    const dueDate = new Date(remediation.duedate);
-    return dueDate < new Date();
+    if (!remediation.duedate) return false;
+    return new Date(remediation.duedate) < new Date();
   };
 
   // Available risks (not already scoped to this engagement)
@@ -478,7 +477,6 @@ export default function EngagementsPage() {
       await createProcessMutation.mutateAsync({
         processname: data.processname,
         description: data.description,
-        engagementname: { id: selectedEngagement.id, engagementname: selectedEngagement.engagementname },
       });
       toast.success('Business process added');
       setIsProcessDialogOpen(false);
@@ -495,7 +493,6 @@ export default function EngagementsPage() {
       await createObjectiveMutation.mutateAsync({
         objectivename: data.objectivename,
         description: data.description,
-        engagementname: { id: selectedEngagement.id, engagementname: selectedEngagement.engagementname },
         processname: process ? { id: process.id, processname: process.processname } : undefined,
       });
       toast.success('Business objective added');
@@ -731,7 +728,7 @@ export default function EngagementsPage() {
 
       await createEngagementAuditorMutation.mutateAsync({
         engagementauditorname: `${auditor.auditusername} - ${selectedEngagement.engagementname}`,
-        auditengagement: { id: selectedEngagement.id, engagementname: selectedEngagement.engagementname },
+        auditengagement: { id: selectedEngagement.id },
         audituser: { id: auditor.id, auditusername: auditor.auditusername },
         roleKey: data.roleKey,
         assigneddate: new Date().toISOString().split('T')[0],
@@ -1340,7 +1337,7 @@ export default function EngagementsPage() {
                                       <div className="flex items-center gap-1.5">
                                         <Calendar className="w-3.5 h-3.5 text-muted-foreground" />
                                         <span className={`text-sm ${overdue && remediation.statusKey !== 'StatusKey2' ? 'text-destructive font-medium' : ''}`}>
-                                          {new Date(remediation.duedate).toLocaleDateString()}
+                                          {remediation.duedate ? new Date(remediation.duedate).toLocaleDateString() : '—'}
                                         </span>
                                       </div>
                                     </TableCell>
@@ -1644,7 +1641,7 @@ export default function EngagementsPage() {
                                     </Badge>
                                   </TableCell>
                                   <TableCell className="text-muted-foreground">
-                                    {ea.assigneddate ? new Date(ea.assigneddate).toLocaleDateString() : '—'}
+                                    {'—'}
                                   </TableCell>
                                   <TableCell>
                                     <Button
@@ -2351,7 +2348,7 @@ export default function EngagementsPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label className="text-xs text-muted-foreground">Due Date</Label>
-                  <p className="mt-1 text-foreground">{new Date(viewingRemediation.duedate).toLocaleDateString()}</p>
+                  <p className="mt-1 text-foreground">{viewingRemediation.duedate ? new Date(viewingRemediation.duedate).toLocaleDateString() : '—'}</p>
                 </div>
                 <div>
                   <Label className="text-xs text-muted-foreground">Status</Label>

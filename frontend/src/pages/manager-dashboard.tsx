@@ -138,7 +138,7 @@ export default function ManagerDashboardPage() {
   const outstandingMAPs = filteredRemediations.filter(r => 
     r.statusKey !== 'StatusKey2' // Not completed
   );
-  const overdueMAPs = outstandingMAPs.filter(r => new Date(r.duedate) < new Date());
+  const overdueMAPs = outstandingMAPs.filter(r => !!r.duedate && new Date(r.duedate) < new Date());
 
   // Engagement overview - filtered
   const engagementsByStatus = useMemo(() => {
@@ -543,7 +543,7 @@ export default function ManagerDashboardPage() {
                     </TableHeader>
                     <TableBody>
                       {outstandingMAPs.slice(0, 5).map((map) => {
-                        const isOverdue = new Date(map.duedate) < new Date();
+                        const isOverdue = !!map.duedate && new Date(map.duedate) < new Date();
                         return (
                           <TableRow key={map.id}>
                             <TableCell>
@@ -554,7 +554,7 @@ export default function ManagerDashboardPage() {
                               <div className="flex items-center gap-1.5">
                                 <Calendar className="w-3.5 h-3.5 text-muted-foreground" />
                                 <span className={`text-sm ${isOverdue ? 'text-destructive font-medium' : 'text-foreground'}`}>
-                                  {new Date(map.duedate).toLocaleDateString()}
+                                  {map.duedate ? new Date(map.duedate).toLocaleDateString() : '—'}
                                 </span>
                               </div>
                             </TableCell>
