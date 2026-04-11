@@ -1,3 +1,154 @@
+import { useState, useMemo, useCallback } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import {
+  AlertCircle,
+  Plus,
+  Pencil,
+  Trash2,
+  Search,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  Filter,
+  X,
+  Download,
+  Upload,
+  CheckSquare,
+  FileSpreadsheet,
+} from 'lucide-react';
+import { useForm } from 'react-hook-form';
+import { toast } from 'sonner';
+
+import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Spinner } from '@/components/ui/spinner';
+
+import {
+  useFindingList,
+  useControlList,
+  useAuditUserList,
+  useFindingOwnerList,
+  useCreateFinding,
+  useUpdateFinding,
+  useDeleteFinding,
+} from '@/generated/hooks';
+import type { Finding, FindingSeverityKey } from '@/generated/models';
+import { FindingSeverityKeyToLabel } from '@/generated/models';
+
+// ── Severity options ──────────────────────────────────────────────────────────
+const severityOptions: { key: FindingSeverityKey; label: string }[] = [
+  { key: 'SeverityKey0', label: 'Low' },
+  { key: 'SeverityKey1', label: 'Medium' },
+  { key: 'SeverityKey2', label: 'High' },
+];
+
+// ── Excel helpers ─────────────────────────────────────────────────────────────
+function generateExcelXML(data: Array<Record<string, string>>, headers: string[]): string {
+  const escapeXml = (str: string) =>
+    str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+  let xml = '<?xml version="1.0" encoding="UTF-8"?>';
+  xml += '<?mso-application progid="Excel.Sheet"?>';
+  xml += '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">';
+  xml += '<Styles><Style ss:ID="Header"><Font ss:Bold="1"/><Interior ss:Color="#E8E8E8" ss:Pattern="Solid"/></Style></Styles>';
+  xml += '<Worksheet ss:Name="Findings"><Table>';
+
+  xml += '<Row>';
+  headers.forEach(h => {
+    xml += `<Cell ss:StyleID="Header"><Data ss:Type="String">${escapeXml(h)}</Data></Cell>`;
+  });
+  xml += '</Row>';
+
+  data.forEach(row => {
+    xml += '<Row>';
+    headers.forEach(h => {
+      xml += `<Cell><Data ss:Type="String">${escapeXml(row[h] || '')}</Data></Cell>`;
+    });
+    xml += '</Row>';
+  });
+
+  xml += '</Table></Worksheet></Workbook>';
+  return xml;
+}
+
+function parseExcelXML(xmlString: string): Array<Record<string, string>> {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(xmlString, 'text/xml');
+  const rows = doc.querySelectorAll('Row');
+  const result: Array<Record<string, string>> = [];
+
+  if (rows.length < 2) return result;
+
+  const headerCells = rows[0].querySelectorAll('Cell Data');
+  const headers: string[] = [];
+  headerCells.forEach(cell => headers.push(cell.textContent || ''));
+
+  for (let i = 1; i < rows.length; i++) {
+    const cells = rows[i].querySelectorAll('Cell Data');
+    const rowData: Record<string, string> = {};
+    cells.forEach((cell, idx) => {
+      if (headers[idx]) {
+        rowData[headers[idx]] = cell.textContent || '';
+      }
+    });
+    if (Object.keys(rowData).length > 0) {
+      result.push(rowData);
+    }
+  }
+
+  return result;
+}
+
+// ── Local types ───────────────────────────────────────────────────────────────
+interface FindingFormData {
+  findingtitle: string;
+  recommendation?: string;
+  severityKey?: FindingSeverityKey;
+  controlId?: string;
+  auditUserId?: string;
+  findingOwnerId?: string;
+}
+
+type SortField = 'findingtitle' | 'severity' | 'control' | 'owner';
+type SortDirection = 'asc' | 'desc' | null;
+
 export default function FindingsPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingFinding, setEditingFinding] = useState<Finding | null>(null);
@@ -809,46 +960,3 @@ export default function FindingsPage() {
     </div>
   );
 }
-
-import { motion } from 'motion/react';
-import { NavLink } from 'react-router-dom';
-import {
-  AlertTriangle,
-  Shield,
-  Search,
-  ClipboardCheck,
-  TrendingUp,
-  TrendingDown,
-  ArrowRight,
-  CheckCircle2,
-  Clock,
-  Bell,
-  Mail,
-} from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import {
-  useRiskList,
-  useControlList,
-  useFindingList,
-  useApprovalRequestList,
-  useRemediationActionList,
-} from '@/generated/hooks';
-import { getOverdueRemediations } from '@/hooks/use-email-notifications';
-import { FindingSeverityKeyToLabel, ApprovalRequestApprovalstatusKeyToLabel } from '@/generated/models';
-
-const containerVariants = {
-  hidden: { opacity: 0 },
-  show: {
-    opacity: 1,
-    transition: {
-      staggerChildren: 0.1,
-    },
-  },
-};
-
-const itemVariants = {
-  hidden: { opacity: 0, y: 20 },
-  show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] as const } },
-} as const;
