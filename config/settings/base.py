@@ -50,6 +50,12 @@ LOCAL_APPS = [
     "apps.controls",
     "apps.findings",
     "apps.reports",
+    # Domain model expansion
+    "apps.taxonomy",
+    "apps.universe",
+    "apps.frameworks",
+    "apps.testing",
+    "apps.jurisdictions",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS

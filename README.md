@@ -122,8 +122,13 @@ InternalAuditHub/
 │   ├── core/                    # Shared models, middleware, utils
 │   ├── engagements/             # Audit engagements & planning
 │   ├── findings/                # Findings, evidence & remediation
+│   ├── frameworks/              # Framework library & control mapping
+│   ├── jurisdictions/           # Jurisdiction & regulator overlays
 │   ├── reports/                 # Report generation & dashboards
-│   └── risks/                   # Risk register & assessments
+│   ├── risks/                   # Risk register & assessments
+│   ├── taxonomy/                # Risk taxonomy & scoring configs
+│   ├── testing/                 # Test plans, instances & exceptions
+│   └── universe/                # Auditable universe hierarchy
 ├── config/                      # Django project configuration
 │   ├── settings/
 │   │   ├── base.py              # Shared settings
@@ -144,15 +149,240 @@ InternalAuditHub/
 
 ---
 
+## Data Model / ERD
+
+The domain model is organised into five conceptual layers that build on top of the original core modules.
+
+### Layer 0 — Foundations (original)
+
+| Model | App | Description |
+|-------|-----|-------------|
+| `User` | accounts | Custom auth user with RBAC roles |
+| `BusinessProcess` | core | Top-level process grouping |
+| `BusinessObjective` | core | Objective linked to a process |
+| `AuditLog` | core | Immutable mutation audit trail |
+
+---
+
+### Layer 1 — Auditable Universe Hierarchy (`universe`)
+
+Defines *what* can be audited before any engagement is created.
+
+```
+AuditableDomain  ──(self-ref parent)──▶  AuditableDomain (subdomain)
+       │
+       └──▶  AuditableEntity  ──▶  Subprocess ──▶ BusinessProcess (core)
+```
+
+| Model | Key Fields |
+|-------|-----------|
+| `AuditableDomain` | name, parent (self), is_active |
+| `AuditableEntity` | domain, entity_type, inherent_risk_rating, owner, next_audit_date |
+| `Subprocess` | business_process, auditable_entity, sequence_order |
+
+---
+
+### Layer 2 — Risk Taxonomy & Scoring (`taxonomy`)
+
+Classifies risks into a two-level hierarchy and provides configurable scoring.
+
+```
+RiskCategory ──▶ RiskSubcategory
+Risk (risks app) ──FK──▶ RiskCategory
+                 ──FK──▶ RiskSubcategory
+                 ──FK──▶ RiskScoringConfig
+```
+
+| Model | Key Fields |
+|-------|-----------|
+| `RiskCategory` | name, is_active |
+| `RiskSubcategory` | category (FK), name |
+| `RiskScoringConfig` | scoring_method (×/+/weighted), likelihood_scale, impact_scale, thresholds, is_default |
+
+---
+
+### Layer 3 — Framework Library & Control Mapping (`frameworks`)
+
+Maintains versioned compliance frameworks and maps controls to their requirements.
+
+```
+CitationSource ◀──── Framework ──▶ FrameworkRequirement (self-ref hierarchy)
+                                           │
+                           ControlObjective (M2M)
+                                           │
+                         ControlActivity ──▶ Control (controls app)
+                                           │
+                   ControlRequirementMapping ──▶ Control + FrameworkRequirement
+```
+
+| Model | Key Fields |
+|-------|-----------|
+| `CitationSource` | name, source_type, publisher, url, publication_date |
+| `Framework` | short_name, framework_type, version, effective_date, expiry_date |
+| `FrameworkRequirement` | framework, parent (self), requirement_id, title, requirement_type, effective_date |
+| `ControlObjective` | reference_code, framework_requirements (M2M) |
+| `ControlActivity` | control, control_objective, activity_type, framework_requirements (M2M) |
+| `ControlRequirementMapping` | control, framework_requirement, mapping_type, effective_date, expiry_date |
+
+**Many-to-many links**
+
+- `Control ↔ FrameworkRequirement` via `ControlRequirementMapping` (explicit through-table with mapping_type and effective dating)
+- `Control ↔ Risk` via existing M2M on `Control.risks`
+- `ControlObjective ↔ FrameworkRequirement` via M2M
+- `ControlActivity ↔ FrameworkRequirement` via M2M
+
+---
+
+### Layer 4 — Testing Layer (`testing`)
+
+Captures the full testing lifecycle from plan to exception.
+
+```
+TestPlan ──▶ Control + AuditEngagement
+   │
+TestInstance ──▶ TestPlan
+   │
+SampleItem ──▶ TestInstance ──▶ Evidence (findings app)
+   │
+TestException ──▶ TestInstance + SampleItem ──▶ Finding (findings app)
+```
+
+| Model | Key Fields |
+|-------|-----------|
+| `TestingMethod` | name, method_type (inquiry/observation/inspection/reperformance/…) |
+| `AssertionType` | name (existence, completeness, accuracy, …) |
+| `TestPlan` | control, engagement, testing_method, assertion_types (M2M), population_size, sample_size, sampling_method, design_effectiveness_status |
+| `TestInstance` | test_plan, instance_number, test_period_start/end, operating_effectiveness_status |
+| `SampleItem` | test_instance, item_identifier, result (pass/fail/exception) |
+| `TestException` | test_instance, sample_item, exception_type, severity, finding (optional escalation) |
+
+---
+
+### Layer 5 — Jurisdiction & Regulator Overlay (`jurisdictions`)
+
+Allows jurisdiction-specific requirements to overlay base framework requirements, with applicability logic and effective dating.
+
+```
+Jurisdiction ──▶ RequirementOverlay ──▶ FrameworkRequirement (frameworks)
+     │                                         │
+     └──▶ ApplicabilityLogic ──▶ AuditableEntity (universe)
+```
+
+| Model | Key Fields |
+|-------|-----------|
+| `Jurisdiction` | name, short_name, jurisdiction_type, country, region |
+| `RequirementOverlay` | jurisdiction, framework_requirement, overlay_type, overlay_text, effective_date, expiry_date |
+| `ApplicabilityLogic` | jurisdiction, auditable_entity, framework_requirement, condition_type, condition_config (JSON), is_applicable, effective_date |
+
+**Effective dating** is present on `Framework`, `FrameworkRequirement`, `ControlRequirementMapping`, `RequirementOverlay`, and `ApplicabilityLogic` — each carries `effective_date` / `expiry_date` so historical snapshots are never lost.
+
+---
+
+### Full Relationship Summary
+
+```
+accounts.User
+    ├── owns → AuditableEntity, Subprocess, Risk, Control, AuditEngagement, TestPlan
+    └── performs → TestInstance
+
+universe
+    AuditableDomain → AuditableEntity → Subprocess → core.BusinessProcess
+
+taxonomy
+    RiskCategory → RiskSubcategory
+    risks.Risk → RiskCategory, RiskSubcategory, RiskScoringConfig
+
+frameworks
+    CitationSource ← Framework → FrameworkRequirement (tree)
+    ControlObjective ↔ FrameworkRequirement (M2M)
+    ControlActivity → controls.Control, ControlObjective
+    ControlActivity ↔ FrameworkRequirement (M2M)
+    ControlRequirementMapping → controls.Control + FrameworkRequirement
+
+testing
+    TestPlan → controls.Control, engagements.AuditEngagement
+    TestPlan ↔ AssertionType (M2M)
+    TestInstance → TestPlan
+    SampleItem → TestInstance, findings.Evidence
+    TestException → TestInstance, SampleItem, findings.Finding
+
+jurisdictions
+    Jurisdiction → RequirementOverlay → frameworks.FrameworkRequirement
+    Jurisdiction → ApplicabilityLogic → universe.AuditableEntity, FrameworkRequirement
+```
+
+---
+
 ## API Documentation
 
 With the server running, interactive API docs are available at:
 
-- **Swagger UI:** `http://localhost:8000/api/schema/swagger-ui/`
-- **ReDoc:** `http://localhost:8000/api/schema/redoc/`
-- **OpenAPI schema:** `http://localhost:8000/api/schema/`
+- **Swagger UI:** `http://localhost:8000/api/v1/docs/`
+- **ReDoc:** `http://localhost:8000/api/v1/redoc/`
+- **OpenAPI schema:** `http://localhost:8000/api/v1/schema/`
 
-Authentication uses JWT. Obtain tokens at `/api/token/` and refresh at `/api/token/refresh/`.
+Authentication uses JWT. Obtain tokens at `/api/v1/auth/token/` and refresh at `/api/v1/auth/token/refresh/`.
+
+### New API Endpoints (v1)
+
+All endpoints require JWT authentication (`Authorization: Bearer <token>`).
+
+#### Risk Taxonomy (`/api/v1/`)
+| Method | URL | Description |
+|--------|-----|-------------|
+| GET/POST | `risk-categories/` | List / create risk categories |
+| GET/PUT/PATCH/DELETE | `risk-categories/<uuid>/` | Retrieve / update / delete |
+| GET/POST | `risk-subcategories/` | List / create subcategories |
+| GET/PUT/PATCH/DELETE | `risk-subcategories/<uuid>/` | Retrieve / update / delete |
+| GET/POST | `risk-scoring-configs/` | List / create scoring configs |
+| GET/PUT/PATCH/DELETE | `risk-scoring-configs/<uuid>/` | Retrieve / update / delete |
+
+#### Auditable Universe (`/api/v1/`)
+| Method | URL | Description |
+|--------|-----|-------------|
+| GET/POST | `auditable-domains/` | List / create domains |
+| GET/PUT/PATCH/DELETE | `auditable-domains/<uuid>/` | Retrieve / update / delete |
+| GET/POST | `auditable-entities/` | List / create entities |
+| GET/PUT/PATCH/DELETE | `auditable-entities/<uuid>/` | Retrieve / update / delete |
+| GET/POST | `subprocesses/` | List / create subprocesses |
+| GET/PUT/PATCH/DELETE | `subprocesses/<uuid>/` | Retrieve / update / delete |
+
+#### Framework Library (`/api/v1/`)
+| Method | URL | Description |
+|--------|-----|-------------|
+| GET/POST | `citation-sources/` | List / create citation sources |
+| GET/POST | `frameworks/` | List / create frameworks |
+| GET/PUT/PATCH/DELETE | `frameworks/<uuid>/` | Retrieve / update / delete |
+| GET/POST | `framework-requirements/` | List / create requirements |
+| GET/PUT/PATCH/DELETE | `framework-requirements/<uuid>/` | Retrieve / update / delete |
+| GET/POST | `control-objectives/` | List / create control objectives |
+| GET/POST | `control-activities/` | List / create control activities |
+| GET/POST | `control-requirement-mappings/` | List / create control↔requirement mappings |
+| GET/PUT/PATCH/DELETE | `control-requirement-mappings/<uuid>/` | Retrieve / update / delete |
+
+#### Testing Layer (`/api/v1/`)
+| Method | URL | Description |
+|--------|-----|-------------|
+| GET/POST | `testing-methods/` | List / create testing methods |
+| GET/POST | `assertion-types/` | List / create assertion types |
+| GET/POST | `test-plans/` | List / create test plans |
+| GET/PUT/PATCH/DELETE | `test-plans/<uuid>/` | Retrieve / update / delete |
+| GET/POST | `test-instances/` | List / create test instances |
+| GET/PUT/PATCH/DELETE | `test-instances/<uuid>/` | Retrieve / update / delete |
+| GET/POST | `sample-items/` | List / create sample items |
+| GET/PUT/PATCH/DELETE | `sample-items/<uuid>/` | Retrieve / update / delete |
+| GET/POST | `test-exceptions/` | List / create test exceptions |
+| GET/PUT/PATCH/DELETE | `test-exceptions/<uuid>/` | Retrieve / update / delete |
+
+#### Jurisdictions & Overlays (`/api/v1/`)
+| Method | URL | Description |
+|--------|-----|-------------|
+| GET/POST | `jurisdictions/` | List / create jurisdictions |
+| GET/PUT/PATCH/DELETE | `jurisdictions/<uuid>/` | Retrieve / update / delete |
+| GET/POST | `requirement-overlays/` | List / create requirement overlays |
+| GET/PUT/PATCH/DELETE | `requirement-overlays/<uuid>/` | Retrieve / update / delete |
+| GET/POST | `applicability-rules/` | List / create applicability logic rules |
+| GET/PUT/PATCH/DELETE | `applicability-rules/<uuid>/` | Retrieve / update / delete |
 
 ---
 
