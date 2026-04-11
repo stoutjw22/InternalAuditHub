@@ -83,7 +83,8 @@ const actionColors: Record<AuditLogActiontypeKey, string> = {
 };
 
 export default function AuditLogsPage() {
-  const { data: auditLogs = [], isLoading } = useAuditLogList();
+  const { data: auditLogsData, isLoading } = useAuditLogList();
+  const auditLogs = auditLogsData?.results ?? [];
   const [searchQuery, setSearchQuery] = useState('');
   const [entityFilter, setEntityFilter] = useState<string>('all');
   const [actionFilter, setActionFilter] = useState<string>('all');

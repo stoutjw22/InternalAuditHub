@@ -98,12 +98,20 @@ class UserListView(generics.ListAPIView):
         )
 
 
-class UserDetailView(generics.RetrieveUpdateAPIView):
-    """Retrieve or update any user (admin only)."""
+class UserDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """Retrieve, update, or deactivate any user (admin only).
+
+    DELETE performs a soft-delete (sets is_active=False) so audit history
+    referencing this user is preserved.
+    """
 
     serializer_class = UserProfileSerializer
     permission_classes = [IsAdminRole]
     queryset = User.objects.all()
+
+    def perform_destroy(self, instance):
+        instance.is_active = False
+        instance.save(update_fields=["is_active"])
 
 
 class RoleFilteredUserListView(generics.ListAPIView):

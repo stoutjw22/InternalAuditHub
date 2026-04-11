@@ -72,7 +72,8 @@ const itemVariants = {
   show: { opacity: 1, y: 0, transition: { duration: 0.35, ease: [0.25, 0.46, 0.45, 0.94] as const } },
 } as const;
 
-function getDaysOverdue(dueDate: string): number {
+function getDaysOverdue(dueDate?: string): number {
+  if (!dueDate) return 0;
   return differenceInDays(new Date(), new Date(dueDate));
 }
 
@@ -421,7 +422,7 @@ export default function NotificationsPage() {
                                       <span className="text-muted-foreground/30">•</span>
                                       <span className="flex items-center gap-1">
                                         <Calendar className="w-3.5 h-3.5" />
-                                        Due {format(new Date(remediation.duedate), 'MMM d, yyyy')}
+                                        Due {remediation.duedate ? format(new Date(remediation.duedate), 'MMM d, yyyy') : '—'}
                                       </span>
                                       <span className="text-muted-foreground/30">•</span>
                                       <span className="flex items-center gap-1">
@@ -488,9 +489,9 @@ export default function NotificationsPage() {
                   ) : (
                     <div className="space-y-2">
                       {upcomingRemediations.map(remediation => {
-                        const daysUntilDue = Math.ceil(
-                          (new Date(remediation.duedate).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
-                        );
+                        const daysUntilDue = remediation.duedate
+                          ? Math.ceil((new Date(remediation.duedate).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+                          : 0;
                         return (
                           <div
                             key={remediation.id}
@@ -501,7 +502,7 @@ export default function NotificationsPage() {
                               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                                 <span>{remediation.ownername?.findingownername || 'Unassigned'}</span>
                                 <span>•</span>
-                                <span>Due {format(new Date(remediation.duedate), 'MMM d, yyyy')}</span>
+                                <span>Due {remediation.duedate ? format(new Date(remediation.duedate), 'MMM d, yyyy') : '—'}</span>
                               </div>
                             </div>
                             <div className="flex items-center gap-2">
@@ -547,7 +548,7 @@ export default function NotificationsPage() {
                                 <CheckCircle2 className="w-4 h-4 text-accent" />
                               </div>
                               <div>
-                                <p className="font-medium text-foreground">{notification.recipientName}</p>
+                                <p className="font-medium text-foreground">{notification.recipientEmail}</p>
                                 <p className="text-sm text-muted-foreground">
                                   {notification.subject}
                                 </p>

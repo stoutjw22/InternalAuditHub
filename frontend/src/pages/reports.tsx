@@ -140,9 +140,7 @@ export default function ReportsPage() {
 
   // Get engagement data for report preview
   const selectedEngagement = engagements.find(e => e.id === selectedEngagementId);
-  const engagementObjectives = selectedEngagement
-    ? allObjectives.filter(o => o.engagementname?.id === selectedEngagement.id)
-    : [];
+  const engagementObjectives = selectedEngagement ? allObjectives : [];
   const engagementRisks = useMemo(() => {
     if (!selectedEngagement) return [];
     const objectiveIds = new Set(engagementObjectives.map(o => o.id));

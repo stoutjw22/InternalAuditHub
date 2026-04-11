@@ -200,7 +200,7 @@ class ApprovalRequestListCreateView(generics.ListCreateAPIView):
         ).select_related("requested_by", "approver")
 
 
-class ApprovalRequestDetailView(generics.RetrieveDestroyAPIView):
+class ApprovalRequestDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = ApprovalRequestSerializer
     permission_classes = [permissions.IsAuthenticated]
 
