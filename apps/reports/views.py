@@ -153,4 +153,23 @@ class FinalizeReportView(APIView):
         report.finalized_at = timezone.now()
         report.save(update_fields=["status", "finalized_by", "finalized_at"])
 
+        # Explicit hook: the AuditReport signal records the field diff, but we
+        # also want a semantic "approve" entry that surfaces finalization clearly.
+        try:
+            from apps.core import audit as _audit
+            _audit.log_event(
+                action="approve",
+                entity_type="auditreport",
+                entity_id=str(report.pk),
+                entity_name=report.title,
+                user=request.user,
+                request=request,
+                new_values={
+                    "status": "final",
+                    "finalized_by": str(request.user.pk),
+                },
+            )
+        except Exception:
+            pass  # audit failure must never break the real response
+
         return Response(AuditReportSerializer(report).data)

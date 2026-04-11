@@ -74,6 +74,24 @@ class PasswordChangeView(APIView):
         serializer = PasswordChangeSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         serializer.save()
+
+        # Explicit hook: the User signal fires here too, but the password diff
+        # is always [REDACTED] → [REDACTED] which is indistinguishable from no
+        # change.  This entry records the event clearly without storing any hash.
+        try:
+            from apps.core import audit as _audit
+            _audit.log_event(
+                action="update",
+                entity_type="user",
+                entity_id=str(request.user.pk),
+                entity_name=str(request.user),
+                user=request.user,
+                request=request,
+                new_values={"password_changed": True},
+            )
+        except Exception:
+            pass  # audit failure must never break the real response
+
         return Response({"detail": "Password changed successfully."})
 
 
