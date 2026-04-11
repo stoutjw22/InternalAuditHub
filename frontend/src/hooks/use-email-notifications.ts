@@ -1,4 +1,38 @@
 import { useState } from "react";
+import type { RemediationAction } from "@/generated/models";
+
+// ── Pure utility functions ────────────────────────────────────────────────────
+// Exported for use by notifications, findings, and index pages.
+
+/**
+ * Returns remediations that are past their due date and not yet completed.
+ * "Completed" maps to RemediationActionStatusKey 'StatusKey2'.
+ */
+export function getOverdueRemediations(remediations: RemediationAction[]): RemediationAction[] {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return remediations.filter(
+    r => r.statusKey !== "StatusKey2" && r.duedate && new Date(r.duedate) < today
+  );
+}
+
+/**
+ * Returns remediations due within `daysAhead` days that are not yet completed.
+ * Defaults to a 14-day window.
+ */
+export function getUpcomingRemediations(
+  remediations: RemediationAction[],
+  daysAhead = 14
+): RemediationAction[] {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const cutoff = new Date(today.getTime() + daysAhead * 86_400_000);
+  return remediations.filter(r => {
+    if (r.statusKey === "StatusKey2" || !r.duedate) return false;
+    const due = new Date(r.duedate);
+    return due >= today && due <= cutoff;
+  });
+}
 
 export interface EmailNotification {
   id: string;
