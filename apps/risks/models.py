@@ -82,6 +82,33 @@ class Risk(models.Model):
         related_name="risks",
     )
     treatment_plan = models.TextField(blank=True)
+
+    # Taxonomy links (optional — enrich the free-text category field)
+    risk_category = models.ForeignKey(
+        "taxonomy.RiskCategory",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="risks",
+        help_text="Structured taxonomy category for this risk.",
+    )
+    risk_subcategory = models.ForeignKey(
+        "taxonomy.RiskSubcategory",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="risks",
+        help_text="Structured taxonomy subcategory for this risk.",
+    )
+    scoring_config = models.ForeignKey(
+        "taxonomy.RiskScoringConfig",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="risks",
+        help_text="Scoring configuration to use when computing this risk's score.",
+    )
+
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
