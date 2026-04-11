@@ -1,3 +1,46 @@
+import { motion } from 'motion/react';
+import { NavLink } from 'react-router-dom';
+import {
+  AlertTriangle,
+  Shield,
+  Search,
+  ClipboardCheck,
+  TrendingUp,
+  TrendingDown,
+  ArrowRight,
+  CheckCircle2,
+  Clock,
+  Bell,
+  Mail,
+} from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import {
+  useRiskList,
+  useControlList,
+  useFindingList,
+  useApprovalRequestList,
+  useRemediationActionList,
+} from '@/generated/hooks';
+import { getOverdueRemediations } from '@/hooks/use-email-notifications';
+import { FindingSeverityKeyToLabel, ApprovalRequestApprovalstatusKeyToLabel } from '@/generated/models';
+
+const containerVariants = {
+  hidden: { opacity: 0 },
+  show: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.1,
+    },
+  },
+};
+
+const itemVariants = {
+  hidden: { opacity: 0, y: 20 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] as const } },
+} as const;
+
 export default function HomePage() {
   const { data: risks = [] } = useRiskList();
   const { data: controls = [] } = useControlList();
