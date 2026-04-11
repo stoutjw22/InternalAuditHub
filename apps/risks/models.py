@@ -141,6 +141,18 @@ class EngagementRisk(models.Model):
         on_delete=models.CASCADE,
         related_name="engagement_risks",
     )
+    objective = models.ForeignKey(
+        "core.BusinessObjective",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="engagement_risks",
+    )
+    display_name = models.CharField(
+        max_length=300,
+        blank=True,
+        help_text="Display label, e.g. 'Risk Name – Objective Name'.",
+    )
     assessment_notes = models.TextField(blank=True)
     is_in_scope = models.BooleanField(default=True)
     created_by = models.ForeignKey(
@@ -158,4 +170,4 @@ class EngagementRisk(models.Model):
         unique_together = ("engagement", "risk")
 
     def __str__(self) -> str:
-        return f"{self.risk} in {self.engagement}"
+        return self.display_name or f"{self.risk} in {self.engagement}"

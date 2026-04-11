@@ -1,176 +1,153 @@
-import { useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
-import { motion, AnimatePresence } from "framer-motion";
-import { useAtom } from "jotai";
-import { currentUserAtom } from "@/lib/auth";
-import { logout } from "@/lib/auth";
-import { cn } from "@/lib/utils";
+import { useState } from 'react';
+import { Outlet, NavLink, useLocation } from 'react-router-dom';
+import { motion, AnimatePresence } from 'motion/react';
 import {
-  LayoutDashboard, ShieldAlert, Layers, FileWarning, ClipboardCheck,
-  FileText, BookTemplate, Users, ScrollText, Bell, ChevronLeft,
-  Menu, X, LogOut, User, Settings,
-} from "lucide-react";
+  Shield,
+  AlertTriangle,
+  FileCheck,
+  Search,
+  Users,
+  ClipboardCheck,
+  LayoutDashboard,
+  ClipboardList,
+  BarChart3,
+  Menu,
+  Bell,
+  FileText,
+  ChevronRight,
+  History,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 
-const NAV_ITEMS = [
-  { to: "/", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/engagements", label: "Engagements", icon: ClipboardCheck },
-  { to: "/risks", label: "Risks", icon: ShieldAlert },
-  { to: "/controls", label: "Controls", icon: Layers },
-  { to: "/findings", label: "Findings", icon: FileWarning },
-  { to: "/approvals", label: "Approvals", icon: CheckSquareIcon },
-  { to: "/reports", label: "Reports", icon: FileText },
-  { to: "/report-templates", label: "Templates", icon: BookTemplate },
-  { to: "/users", label: "Users", icon: Users },
-  { to: "/audit-logs", label: "Audit Logs", icon: ScrollText },
-  { to: "/notifications", label: "Notifications", icon: Bell },
+const navItems = [
+  { path: '/', label: 'Dashboard', icon: LayoutDashboard },
+  { path: '/auditor-dashboard', label: 'Auditor View', icon: ClipboardList },
+  { path: '/manager-dashboard', label: 'Manager View', icon: BarChart3 },
+  { path: '/engagements', label: 'Engagements', icon: FileCheck },
+  { path: '/risks', label: 'Risks', icon: AlertTriangle },
+  { path: '/controls', label: 'Controls', icon: Shield },
+  { path: '/findings', label: 'Findings', icon: Search },
+  { path: '/approvals', label: 'Approvals', icon: ClipboardCheck },
+  { path: '/users', label: 'Users', icon: Users },
+  { path: '/reports', label: 'Reports', icon: FileText },
+  { path: '/notifications', label: 'Notifications', icon: Bell },
+  { path: '/audit-logs', label: 'Audit Trail', icon: History },
 ];
 
-function CheckSquareIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />
-    </svg>
-  );
-}
-
-function NavItem({ to, label, Icon, collapsed }: {
-  to: string; label: string; Icon: React.ElementType; collapsed: boolean;
-}) {
+function NavContent({ onNavigate }: { onNavigate?: () => void }) {
   const location = useLocation();
-  const active = to === "/" ? location.pathname === "/" : location.pathname.startsWith(to);
 
   return (
-    <Link
-      to={to}
-      title={collapsed ? label : undefined}
-      className={cn(
-        "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
-        active
-          ? "bg-sidebar-accent text-sidebar-accent-foreground"
-          : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
-      )}
-    >
-      <Icon className="h-4 w-4 shrink-0" />
-      {!collapsed && <span>{label}</span>}
-    </Link>
-  );
-}
-
-export default function Layout({ children }: { children: React.ReactNode }) {
-  const [collapsed, setCollapsed] = useState(false);
-  const [mobileOpen, setMobileOpen] = useState(false);
-  const [user, setUser] = useAtom(currentUserAtom);
-  const navigate = useNavigate();
-
-  async function handleLogout() {
-    await logout();
-    setUser(null);
-    navigate("/login", { replace: true });
-  }
-
-  const sidebar = (
-    <div className={cn(
-      "flex h-full flex-col bg-sidebar text-sidebar-foreground transition-all duration-200",
-      collapsed ? "w-16" : "w-60"
-    )}>
-      {/* Logo */}
-      <div className="flex h-16 items-center justify-between px-4 border-b border-sidebar-border">
-        {!collapsed && (
-          <span className="font-display text-lg font-semibold text-sidebar-foreground">
-            AuditHub
-          </span>
-        )}
-        <button
-          onClick={() => setCollapsed((c) => !c)}
-          className="rounded-lg p-1.5 hover:bg-sidebar-accent text-sidebar-foreground/70 hover:text-sidebar-foreground"
-        >
-          <ChevronLeft className={cn("h-4 w-4 transition-transform", collapsed && "rotate-180")} />
-        </button>
+    <div className="flex flex-col h-full">
+      <div className="p-6 border-b border-sidebar-border">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-sidebar-primary rounded-lg flex items-center justify-center">
+            <FileCheck className="w-5 h-5 text-sidebar-primary-foreground" />
+          </div>
+          <div>
+            <h1 className="font-display text-lg font-bold text-sidebar-foreground">AuditFlow</h1>
+            <p className="text-xs text-sidebar-foreground/60">Internal Audit Platform</p>
+          </div>
+        </div>
       </div>
 
-      {/* Nav */}
-      <nav className="flex-1 overflow-y-auto p-3 space-y-0.5">
-        {NAV_ITEMS.map(({ to, label, icon: Icon }) => (
-          <NavItem key={to} to={to} label={label} Icon={Icon} collapsed={collapsed} />
-        ))}
+      <nav className="flex-1 p-4 space-y-1">
+        {navItems.map((item, index) => {
+          const isActive = location.pathname === item.path;
+          return (
+            <motion.div
+              key={item.path}
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: index * 0.05, duration: 0.3, ease: 'easeOut' as const }}
+            >
+              <NavLink
+                to={item.path}
+                onClick={onNavigate}
+                className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 group relative ${
+                  isActive
+                    ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+                    : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'
+                }`}
+              >
+                {isActive && (
+                  <motion.div
+                    layoutId="activeIndicator"
+                    className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-sidebar-primary rounded-r-full"
+                  />
+                )}
+                <item.icon className={`w-5 h-5 ${isActive ? 'text-sidebar-primary' : ''}`} />
+                <span className="font-medium">{item.label}</span>
+                {isActive && (
+                  <ChevronRight className="w-4 h-4 ml-auto text-sidebar-primary" />
+                )}
+              </NavLink>
+            </motion.div>
+          );
+        })}
       </nav>
 
-      {/* User section */}
-      <div className="border-t border-sidebar-border p-3">
-        {user && !collapsed && (
-          <div className="mb-2 px-3 py-1.5">
-            <p className="text-xs font-medium text-sidebar-foreground truncate">{user.full_name}</p>
-            <p className="text-xs text-sidebar-foreground/50 truncate">{user.email}</p>
+      <div className="p-4 border-t border-sidebar-border">
+        <div className="px-4 py-3 bg-sidebar-accent/30 rounded-lg">
+          <p className="text-xs text-sidebar-foreground/60 mb-1">System Status</p>
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 bg-accent rounded-full animate-pulse" />
+            <span className="text-sm text-sidebar-foreground">All systems operational</span>
           </div>
-        )}
-        <button
-          onClick={handleLogout}
-          className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground transition-colors"
-        >
-          <LogOut className="h-4 w-4 shrink-0" />
-          {!collapsed && <span>Sign out</span>}
-        </button>
+        </div>
       </div>
     </div>
   );
+}
+
+export default function Layout() {
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
-    <div className="flex h-screen overflow-hidden">
-      {/* Desktop sidebar */}
-      <div className="hidden lg:flex h-full">
-        {sidebar}
-      </div>
+    <div className="flex min-h-screen bg-background">
+      {/* Desktop Sidebar */}
+      <aside className="hidden lg:flex w-72 bg-sidebar flex-col border-r border-sidebar-border">
+        <NavContent />
+      </aside>
 
-      {/* Mobile sidebar */}
-      <AnimatePresence>
-        {mobileOpen && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="fixed inset-0 z-40 bg-black/50 lg:hidden"
-              onClick={() => setMobileOpen(false)}
-            />
-            <motion.div
-              initial={{ x: -240 }} animate={{ x: 0 }} exit={{ x: -240 }}
-              transition={{ type: "spring", damping: 30, stiffness: 300 }}
-              className="fixed inset-y-0 left-0 z-50 w-60 lg:hidden"
-            >
-              <div className="h-full">
-                {sidebar}
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
-
-      {/* Main content */}
-      <div className="flex flex-1 flex-col overflow-hidden">
-        {/* Mobile header */}
-        <div className="flex h-16 items-center gap-4 border-b px-4 lg:hidden">
-          <button
-            onClick={() => setMobileOpen(true)}
-            className="rounded-lg p-2 hover:bg-muted"
-          >
-            <Menu className="h-5 w-5" />
-          </button>
-          <span className="font-display text-lg font-semibold">AuditHub</span>
+      {/* Mobile Header & Sheet */}
+      <div className="lg:hidden fixed top-0 left-0 right-0 z-50 bg-card border-b border-border">
+        <div className="flex items-center justify-between px-4 py-3">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
+              <FileCheck className="w-4 h-4 text-primary-foreground" />
+            </div>
+            <span className="font-display font-bold text-foreground">AuditFlow</span>
+          </div>
+          <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+            <SheetTrigger asChild>
+              <Button variant="ghost" size="icon">
+                <Menu className="w-5 h-5" />
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="left" className="w-72 p-0 bg-sidebar border-sidebar-border">
+              <NavContent onNavigate={() => setMobileOpen(false)} />
+            </SheetContent>
+          </Sheet>
         </div>
-
-        <main className="flex-1 overflow-y-auto">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={location.pathname}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.15 }}
-              className="h-full"
-            >
-              {children}
-            </motion.div>
-          </AnimatePresence>
-        </main>
       </div>
+
+      {/* Main Content */}
+      <main className="flex-1 lg:ml-0 mt-14 lg:mt-0">
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={location.pathname}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.2, ease: 'easeOut' as const }}
+            className="min-h-screen"
+          >
+            <Outlet />
+          </motion.div>
+        </AnimatePresence>
+      </main>
     </div>
   );
 }

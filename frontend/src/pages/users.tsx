@@ -1,417 +1,558 @@
-import { useState, useMemo } from "react";
-import { Plus, Search, Users, X } from "lucide-react";
-import { useUserList, useUsersByRole } from "@/generated/hooks";
-import { USER_ROLE_LABELS, type UserRole, type UserListItem } from "@/generated/models";
-import { apiClient } from "@/lib/api-client";
-import { cn } from "@/lib/utils";
+import { useState } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import { Users, Plus, Pencil, Trash2, Search, Mail, Phone, UserCircle, ShieldCheck, AlertTriangle, FileSearch, Settings } from 'lucide-react';
+import { useForm } from 'react-hook-form';
+import { toast } from 'sonner';
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { Spinner } from '@/components/ui/spinner';
 
-type TabKey = "all" | "audit_manager" | "auditor" | "risk_owner" | "control_owner" | "finding_owner";
+import {
+  useAuditUserList,
+  useCreateAuditUser,
+  useUpdateAuditUser,
+  useDeleteAuditUser,
+  useAuditManagerList,
+  useCreateAuditManager,
+  useUpdateAuditManager,
+  useDeleteAuditManager,
+  useRiskOwnerList,
+  useCreateRiskOwner,
+  useUpdateRiskOwner,
+  useDeleteRiskOwner,
+  useFindingOwnerList,
+  useCreateFindingOwner,
+  useUpdateFindingOwner,
+  useDeleteFindingOwner,
+  useControlOwnerList,
+  useCreateControlOwner,
+  useUpdateControlOwner,
+  useDeleteControlOwner,
+} from '@/generated/hooks';
 
-interface Tab {
-  key: TabKey;
-  label: string;
+interface UserFormData {
+  name: string;
+  email?: string;
+  phone?: string;
 }
 
-const TABS: Tab[] = [
-  { key: "all", label: "All Users" },
-  { key: "audit_manager", label: "Audit Managers" },
-  { key: "auditor", label: "Auditors" },
-  { key: "risk_owner", label: "Risk Owners" },
-  { key: "control_owner", label: "Control Owners" },
-  { key: "finding_owner", label: "Finding Owners" },
-];
+type UserTab = 'auditUsers' | 'auditManagers' | 'riskOwners' | 'findingOwners' | 'controlOwners';
 
-const ROLE_BADGE_COLORS: Record<UserRole, string> = {
-  admin: "bg-purple-100 text-purple-800",
-  audit_manager: "bg-blue-100 text-blue-800",
-  auditor: "bg-indigo-100 text-indigo-800",
-  risk_owner: "bg-orange-100 text-orange-800",
-  control_owner: "bg-teal-100 text-teal-800",
-  finding_owner: "bg-yellow-100 text-yellow-800",
-  read_only: "bg-gray-100 text-gray-600",
+const userTypeConfig = {
+  auditUsers: {
+    label: 'Audit Users',
+    singular: 'Audit User',
+    nameField: 'auditusername' as const,
+    icon: UserCircle,
+    color: 'text-primary bg-primary/10',
+  },
+  auditManagers: {
+    label: 'Audit Managers',
+    singular: 'Audit Manager',
+    nameField: 'auditmanagername' as const,
+    icon: ShieldCheck,
+    color: 'text-accent bg-accent/10',
+  },
+  riskOwners: {
+    label: 'Risk Owners',
+    singular: 'Risk Owner',
+    nameField: 'riskownername' as const,
+    icon: AlertTriangle,
+    color: 'text-chart-4 bg-chart-4/10',
+  },
+  findingOwners: {
+    label: 'Finding Owners',
+    singular: 'Finding Owner',
+    nameField: 'findingownername' as const,
+    icon: FileSearch,
+    color: 'text-chart-3 bg-chart-3/10',
+  },
+  controlOwners: {
+    label: 'Control Owners',
+    singular: 'Control Owner',
+    nameField: 'controlownername' as const,
+    icon: Settings,
+    color: 'text-chart-5 bg-chart-5/10',
+  },
 };
-
-// Map tab key to useUsersByRole endpoint slug
-const TAB_TO_ROLE_SLUG: Partial<
-  Record<TabKey, "auditors" | "managers" | "risk-owners" | "control-owners" | "finding-owners">
-> = {
-  audit_manager: "managers",
-  auditor: "auditors",
-  risk_owner: "risk-owners",
-  control_owner: "control-owners",
-  finding_owner: "finding-owners",
-};
-
-const ALL_ROLES: UserRole[] = [
-  "admin",
-  "audit_manager",
-  "auditor",
-  "risk_owner",
-  "control_owner",
-  "finding_owner",
-  "read_only",
-];
-
-// ── Invite Dialog ─────────────────────────────────────────────────────────────
-
-interface InviteFormState {
-  email: string;
-  first_name: string;
-  last_name: string;
-  role: UserRole | "";
-  department: string;
-  title: string;
-}
-
-const EMPTY_INVITE: InviteFormState = {
-  email: "",
-  first_name: "",
-  last_name: "",
-  role: "",
-  department: "",
-  title: "",
-};
-
-function InviteUserDialog({ onClose }: { onClose: () => void }) {
-  const [form, setForm] = useState<InviteFormState>(EMPTY_INVITE);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState(false);
-  const [isPending, setIsPending] = useState(false);
-
-  function set<K extends keyof InviteFormState>(field: K, value: InviteFormState[K]) {
-    setForm((f) => ({ ...f, [field]: value }));
-  }
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError("");
-    if (!form.email.trim()) {
-      setError("Email is required.");
-      return;
-    }
-    if (!form.role) {
-      setError("Role is required.");
-      return;
-    }
-    setIsPending(true);
-    try {
-      await apiClient.post("/auth/register/", {
-        email: form.email,
-        first_name: form.first_name,
-        last_name: form.last_name,
-        role: form.role,
-        department: form.department,
-        title: form.title,
-      });
-      setSuccess(true);
-    } catch (err: unknown) {
-      const axiosErr = err as { response?: { data?: { detail?: string } } };
-      setError(axiosErr?.response?.data?.detail ?? "Failed to invite user. Please try again.");
-    } finally {
-      setIsPending(false);
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-lg rounded-xl bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
-          <h2 className="text-lg font-semibold text-gray-900">Invite User</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-
-        {success ? (
-          <div className="p-6 text-center">
-            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-green-100">
-              <Users className="h-6 w-6 text-green-600" />
-            </div>
-            <h3 className="text-base font-semibold text-gray-900">User Invited</h3>
-            <p className="mt-1 text-sm text-gray-500">
-              An account has been created for <strong>{form.email}</strong>.
-            </p>
-            <button
-              onClick={onClose}
-              className="mt-6 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:opacity-90"
-            >
-              Done
-            </button>
-          </div>
-        ) : (
-          <form onSubmit={handleSubmit} className="space-y-4 p-6">
-            {error && (
-              <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
-            )}
-
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-gray-700">
-                Email <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="email"
-                value={form.email}
-                onChange={(e) => set("email", e.target.value)}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                placeholder="user@company.com"
-                required
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-gray-700">First Name</label>
-                <input
-                  type="text"
-                  value={form.first_name}
-                  onChange={(e) => set("first_name", e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                  placeholder="Jane"
-                />
-              </div>
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-gray-700">Last Name</label>
-                <input
-                  type="text"
-                  value={form.last_name}
-                  onChange={(e) => set("last_name", e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                  placeholder="Smith"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-gray-700">
-                Role <span className="text-red-500">*</span>
-              </label>
-              <select
-                value={form.role}
-                onChange={(e) => set("role", e.target.value as UserRole)}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                required
-              >
-                <option value="">— Select role —</option>
-                {ALL_ROLES.map((r) => (
-                  <option key={r} value={r}>
-                    {USER_ROLE_LABELS[r]}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-gray-700">Department</label>
-                <input
-                  type="text"
-                  value={form.department}
-                  onChange={(e) => set("department", e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                  placeholder="IT Audit"
-                />
-              </div>
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-gray-700">Title</label>
-                <input
-                  type="text"
-                  value={form.title}
-                  onChange={(e) => set("title", e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                  placeholder="Senior Auditor"
-                />
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-3 pt-2">
-              <button
-                type="button"
-                onClick={onClose}
-                className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={isPending}
-                className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60"
-              >
-                {isPending ? "Inviting…" : "Send Invite"}
-              </button>
-            </div>
-          </form>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ── User Table ─────────────────────────────────────────────────────────────────
-
-function UserTable({
-  users,
-  isLoading,
-  search,
-}: {
-  users: UserListItem[] | undefined;
-  isLoading: boolean;
-  search: string;
-}) {
-  const filtered = useMemo(() => {
-    if (!users) return [];
-    const q = search.toLowerCase();
-    if (!q) return users;
-    return users.filter(
-      (u) =>
-        u.full_name.toLowerCase().includes(q) ||
-        u.email.toLowerCase().includes(q) ||
-        u.department?.toLowerCase().includes(q)
-    );
-  }, [users, search]);
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-16">
-        <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-      </div>
-    );
-  }
-
-  if (!filtered.length) {
-    return (
-      <div className="flex flex-col items-center justify-center py-16 text-gray-400">
-        <Users className="mb-3 h-10 w-10" />
-        <p className="text-sm">{search ? "No users match your search." : "No users found."}</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-gray-100 bg-gray-50 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
-            <th className="px-6 py-3">Full Name</th>
-            <th className="px-6 py-3">Email</th>
-            <th className="px-6 py-3">Role</th>
-            <th className="px-6 py-3">Department</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-gray-100">
-          {filtered.map((user) => (
-            <tr key={user.id} className="hover:bg-gray-50">
-              <td className="px-6 py-4">
-                <span className="font-medium text-gray-900">
-                  {user.full_name || "—"}
-                </span>
-              </td>
-              <td className="px-6 py-4 text-gray-600">{user.email}</td>
-              <td className="px-6 py-4">
-                <span
-                  className={cn(
-                    "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
-                    ROLE_BADGE_COLORS[user.role]
-                  )}
-                >
-                  {USER_ROLE_LABELS[user.role]}
-                </span>
-              </td>
-              <td className="px-6 py-4 text-gray-500">{user.department || "—"}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-// ── Role Tab content ──────────────────────────────────────────────────────────
-
-function RoleTabContent({
-  roleSlug,
-  search,
-}: {
-  roleSlug: "auditors" | "managers" | "risk-owners" | "control-owners" | "finding-owners";
-  search: string;
-}) {
-  const { data: users, isLoading } = useUsersByRole(roleSlug);
-  return <UserTable users={users} isLoading={isLoading} search={search} />;
-}
-
-function AllUsersContent({ search }: { search: string }) {
-  const { data: users, isLoading } = useUserList();
-  return <UserTable users={users} isLoading={isLoading} search={search} />;
-}
-
-// ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function UsersPage() {
-  const [activeTab, setActiveTab] = useState<TabKey>("all");
-  const [search, setSearch] = useState("");
-  const [showInvite, setShowInvite] = useState(false);
+  const [activeTab, setActiveTab] = useState<UserTab>('auditUsers');
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState<any>(null);
+  const [deleteUser, setDeleteUser] = useState<any>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Audit Users
+  const { data: auditUsers = [], isLoading: loadingAuditUsers } = useAuditUserList();
+  const createAuditUser = useCreateAuditUser();
+  const updateAuditUser = useUpdateAuditUser();
+  const deleteAuditUserMutation = useDeleteAuditUser();
+
+  // Audit Managers
+  const { data: auditManagers = [], isLoading: loadingAuditManagers } = useAuditManagerList();
+  const createAuditManager = useCreateAuditManager();
+  const updateAuditManager = useUpdateAuditManager();
+  const deleteAuditManagerMutation = useDeleteAuditManager();
+
+  // Risk Owners
+  const { data: riskOwners = [], isLoading: loadingRiskOwners } = useRiskOwnerList();
+  const createRiskOwner = useCreateRiskOwner();
+  const updateRiskOwner = useUpdateRiskOwner();
+  const deleteRiskOwnerMutation = useDeleteRiskOwner();
+
+  // Finding Owners
+  const { data: findingOwners = [], isLoading: loadingFindingOwners } = useFindingOwnerList();
+  const createFindingOwner = useCreateFindingOwner();
+  const updateFindingOwner = useUpdateFindingOwner();
+  const deleteFindingOwnerMutation = useDeleteFindingOwner();
+
+  // Control Owners
+  const { data: controlOwners = [], isLoading: loadingControlOwners } = useControlOwnerList();
+  const createControlOwner = useCreateControlOwner();
+  const updateControlOwner = useUpdateControlOwner();
+  const deleteControlOwnerMutation = useDeleteControlOwner();
+
+  const { register, handleSubmit, reset, formState: { errors } } = useForm<UserFormData>();
+
+  const config = userTypeConfig[activeTab];
+
+  const getData = () => {
+    switch (activeTab) {
+      case 'auditUsers': return auditUsers;
+      case 'auditManagers': return auditManagers;
+      case 'riskOwners': return riskOwners;
+      case 'findingOwners': return findingOwners;
+      case 'controlOwners': return controlOwners;
+    }
+  };
+
+  const getIsLoading = () => {
+    switch (activeTab) {
+      case 'auditUsers': return loadingAuditUsers;
+      case 'auditManagers': return loadingAuditManagers;
+      case 'riskOwners': return loadingRiskOwners;
+      case 'findingOwners': return loadingFindingOwners;
+      case 'controlOwners': return loadingControlOwners;
+    }
+  };
+
+  const getName = (user: any) => {
+    return user[config.nameField] || '';
+  };
+
+  const data = getData();
+  const isLoading = getIsLoading();
+
+  const filteredData = data.filter((user: any) =>
+    getName(user).toLowerCase().includes(searchQuery.toLowerCase()) ||
+    user.email?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const openCreateDialog = () => {
+    setEditingUser(null);
+    reset({ name: '', email: '', phone: '' });
+    setIsDialogOpen(true);
+  };
+
+  const openEditDialog = (user: any) => {
+    setEditingUser(user);
+    reset({
+      name: getName(user),
+      email: user.email || '',
+      phone: user.phone || '',
+    });
+    setIsDialogOpen(true);
+  };
+
+  const onSubmit = async (formData: UserFormData) => {
+    try {
+      const payload: any = {
+        email: formData.email,
+        phone: formData.phone,
+      };
+      payload[config.nameField] = formData.name;
+
+      if (editingUser) {
+        switch (activeTab) {
+          case 'auditUsers':
+            await updateAuditUser.mutateAsync({ id: editingUser.id, changedFields: payload });
+            break;
+          case 'auditManagers':
+            await updateAuditManager.mutateAsync({ id: editingUser.id, changedFields: payload });
+            break;
+          case 'riskOwners':
+            await updateRiskOwner.mutateAsync({ id: editingUser.id, changedFields: payload });
+            break;
+          case 'findingOwners':
+            await updateFindingOwner.mutateAsync({ id: editingUser.id, changedFields: payload });
+            break;
+          case 'controlOwners':
+            await updateControlOwner.mutateAsync({ id: editingUser.id, changedFields: payload });
+            break;
+        }
+        toast.success(`${config.singular} updated successfully`);
+      } else {
+        switch (activeTab) {
+          case 'auditUsers':
+            await createAuditUser.mutateAsync(payload);
+            break;
+          case 'auditManagers':
+            await createAuditManager.mutateAsync(payload);
+            break;
+          case 'riskOwners':
+            await createRiskOwner.mutateAsync(payload);
+            break;
+          case 'findingOwners':
+            await createFindingOwner.mutateAsync(payload);
+            break;
+          case 'controlOwners':
+            await createControlOwner.mutateAsync(payload);
+            break;
+        }
+        toast.success(`${config.singular} created successfully`);
+      }
+      setIsDialogOpen(false);
+      reset();
+    } catch {
+      toast.error('An error occurred');
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteUser) return;
+    try {
+      switch (activeTab) {
+        case 'auditUsers':
+          await deleteAuditUserMutation.mutateAsync(deleteUser.id);
+          break;
+        case 'auditManagers':
+          await deleteAuditManagerMutation.mutateAsync(deleteUser.id);
+          break;
+        case 'riskOwners':
+          await deleteRiskOwnerMutation.mutateAsync(deleteUser.id);
+          break;
+        case 'findingOwners':
+          await deleteFindingOwnerMutation.mutateAsync(deleteUser.id);
+          break;
+        case 'controlOwners':
+          await deleteControlOwnerMutation.mutateAsync(deleteUser.id);
+          break;
+      }
+      toast.success(`${config.singular} deleted successfully`);
+      setDeleteUser(null);
+    } catch {
+      toast.error(`Failed to delete ${config.singular.toLowerCase()}`);
+    }
+  };
+
+  const isPending = createAuditUser.isPending || updateAuditUser.isPending ||
+    createAuditManager.isPending || updateAuditManager.isPending ||
+    createRiskOwner.isPending || updateRiskOwner.isPending ||
+    createFindingOwner.isPending || updateFindingOwner.isPending ||
+    createControlOwner.isPending || updateControlOwner.isPending;
+
+  const isDeleting = deleteAuditUserMutation.isPending || deleteAuditManagerMutation.isPending ||
+    deleteRiskOwnerMutation.isPending || deleteFindingOwnerMutation.isPending ||
+    deleteControlOwnerMutation.isPending;
 
   return (
-    <div className="space-y-6 p-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Users</h1>
-          <p className="mt-1 text-sm text-gray-500">Manage team members and their roles</p>
+    <div className="p-6 lg:p-8">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, ease: 'easeOut' as const }}
+        className="max-w-7xl mx-auto space-y-6"
+      >
+        {/* Header */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 bg-gradient-to-br from-primary/20 to-accent/20 rounded-xl flex items-center justify-center shadow-sm">
+              <Users className="w-6 h-6 text-primary" />
+            </div>
+            <div>
+              <h1 className="font-display text-2xl lg:text-3xl font-bold text-foreground tracking-tight">
+                User Management
+              </h1>
+              <p className="text-muted-foreground text-sm">
+                Manage users and their roles
+              </p>
+            </div>
+          </div>
+          <Button onClick={openCreateDialog} className="gap-2">
+            <Plus className="w-4 h-4" />
+            Add {config.singular}
+          </Button>
         </div>
-        <button
-          onClick={() => setShowInvite(true)}
-          className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:opacity-90"
-        >
-          <Plus className="h-4 w-4" />
-          Invite User
-        </button>
-      </div>
 
-      {/* Search + Tabs */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex gap-1 overflow-x-auto">
-          {TABS.map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className={cn(
-                "shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition-colors",
-                activeTab === tab.key
-                  ? "bg-primary text-white"
-                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-              )}
+        {/* Stats */}
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+          {(Object.keys(userTypeConfig) as UserTab[]).map((type) => {
+            const typeConfig = userTypeConfig[type];
+            const count = type === 'auditUsers' ? auditUsers.length :
+              type === 'auditManagers' ? auditManagers.length :
+              type === 'riskOwners' ? riskOwners.length :
+              type === 'findingOwners' ? findingOwners.length : controlOwners.length;
+            const Icon = typeConfig.icon;
+            return (
+              <Card
+                key={type}
+                className={`border-0 shadow-sm cursor-pointer transition-all duration-200 ${
+                  activeTab === type ? 'ring-2 ring-primary shadow-md' : 'hover:shadow-md hover:-translate-y-0.5'
+                }`}
+                onClick={() => setActiveTab(type)}
+              >
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-3">
+                    <div className={`p-2.5 rounded-xl ${typeConfig.color}`}>
+                      <Icon className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <p className="text-2xl font-bold text-foreground">{count}</p>
+                      <p className="text-xs text-muted-foreground">{typeConfig.label}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+
+        {/* User Sub-tabs & Table */}
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as UserTab)}>
+          <TabsList className="grid w-full grid-cols-5">
+            {(Object.keys(userTypeConfig) as UserTab[]).map((type) => (
+              <TabsTrigger key={type} value={type} className="text-xs md:text-sm">
+                {userTypeConfig[type].label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeTab}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.2 }}
+              className="mt-4 space-y-4"
             >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-        <div className="relative w-full sm:w-64">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search name or email…"
-            className="w-full rounded-lg border border-gray-300 py-2 pl-9 pr-3 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-          />
-        </div>
-      </div>
+              {/* Search */}
+              <Card className="border-0 shadow-sm">
+                <CardContent className="p-4">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input
+                      placeholder={`Search ${config.label.toLowerCase()}...`}
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="pl-10"
+                    />
+                  </div>
+                </CardContent>
+              </Card>
 
-      {/* Table */}
-      <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
-        {activeTab === "all" ? (
-          <AllUsersContent search={search} />
-        ) : (
-          <RoleTabContent
-            roleSlug={TAB_TO_ROLE_SLUG[activeTab]!}
-            search={search}
-          />
-        )}
-      </div>
+              {/* Table */}
+              <Card className="border-0 shadow-sm overflow-hidden">
+                <CardContent className="p-0">
+                  {isLoading ? (
+                    <div className="flex items-center justify-center py-16">
+                      <Spinner className="w-8 h-8" />
+                    </div>
+                  ) : filteredData.length === 0 ? (
+                    <div className="text-center py-16">
+                      <config.icon className="w-12 h-12 text-muted-foreground/50 mx-auto mb-4" />
+                      <p className="font-medium text-foreground">No {config.label.toLowerCase()} found</p>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        {searchQuery ? 'Try adjusting your search terms' : `Get started by adding your first ${config.singular.toLowerCase()}`}
+                      </p>
+                      {!searchQuery && (
+                        <Button onClick={openCreateDialog} className="gap-2 mt-4">
+                          <Plus className="w-4 h-4" />
+                          Add {config.singular}
+                        </Button>
+                      )}
+                    </div>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-muted/50">
+                          <TableHead className="font-semibold">Name</TableHead>
+                          <TableHead className="font-semibold">Email</TableHead>
+                          <TableHead className="font-semibold">Phone</TableHead>
+                          <TableHead className="font-semibold w-[100px]">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredData.map((user: any, index: number) => (
+                          <motion.tr
+                            key={user.id}
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: index * 0.03, duration: 0.2 }}
+                            className="border-b border-border/50 hover:bg-muted/30 transition-colors"
+                          >
+                            <TableCell>
+                              <div className="flex items-center gap-3">
+                                <div className={`p-2 rounded-lg ${config.color}`}>
+                                  <config.icon className="w-4 h-4" />
+                                </div>
+                                <span className="font-medium">{getName(user)}</span>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              {user.email ? (
+                                <div className="flex items-center gap-2 text-muted-foreground">
+                                  <Mail className="w-4 h-4" />
+                                  {user.email}
+                                </div>
+                              ) : (
+                                <span className="text-muted-foreground italic">—</span>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              {user.phone ? (
+                                <div className="flex items-center gap-2 text-muted-foreground">
+                                  <Phone className="w-4 h-4" />
+                                  {user.phone}
+                                </div>
+                              ) : (
+                                <span className="text-muted-foreground italic">—</span>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => openEditDialog(user)}
+                                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                                >
+                                  <Pencil className="w-4 h-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => setDeleteUser(user)}
+                                  className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </motion.tr>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
+                </CardContent>
+              </Card>
+            </motion.div>
+          </AnimatePresence>
+        </Tabs>
+      </motion.div>
 
-      {showInvite && <InviteUserDialog onClose={() => setShowInvite(false)} />}
+      {/* Create/Edit User Dialog */}
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="font-display">
+              {editingUser ? `Edit ${config.singular}` : `Add ${config.singular}`}
+            </DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="name">Name *</Label>
+              <Input
+                id="name"
+                {...register('name', { required: 'Name is required' })}
+                placeholder="Enter name"
+              />
+              {errors.name && (
+                <p className="text-sm text-destructive">{errors.name.message}</p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                type="email"
+                {...register('email')}
+                placeholder="Enter email"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="phone">Phone</Label>
+              <Input
+                id="phone"
+                {...register('phone')}
+                placeholder="Enter phone"
+              />
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isPending}>
+                {isPending && <Spinner className="w-4 h-4 mr-2" />}
+                {editingUser ? 'Update' : 'Create'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete User Confirmation */}
+      <AlertDialog open={!!deleteUser} onOpenChange={(open) => !open && setDeleteUser(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {config.singular}</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{deleteUser && getName(deleteUser)}"? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDeleting && <Spinner className="w-4 h-4 mr-2" />}
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
+or you want the ui files

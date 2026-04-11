@@ -35,15 +35,25 @@ class RiskSerializer(serializers.ModelSerializer):
 
 class EngagementRiskSerializer(serializers.ModelSerializer):
     risk_detail = RiskSerializer(source="risk", read_only=True)
+    objective_name = serializers.SerializerMethodField()
+    objective_id = serializers.SerializerMethodField()
 
     class Meta:
         model = EngagementRisk
         fields = (
             "id", "engagement", "risk", "risk_detail",
+            "objective", "objective_name", "objective_id",
+            "display_name",
             "assessment_notes", "is_in_scope",
             "created_by", "created_at",
         )
         read_only_fields = ("id", "created_by", "created_at")
+
+    def get_objective_name(self, obj) -> str:
+        return obj.objective.name if obj.objective else ""
+
+    def get_objective_id(self, obj) -> str:
+        return str(obj.objective.id) if obj.objective else ""
 
     def create(self, validated_data):
         validated_data["created_by"] = self.context["request"].user

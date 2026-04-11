@@ -70,8 +70,8 @@ class FindingDetailView(generics.RetrieveUpdateDestroyAPIView):
         ).prefetch_related("remediation_actions", "evidence_files")
 
 
-class RemediationActionListView(generics.ListAPIView):
-    """Flat list — all remediation actions (optionally filtered by engagement or owner)."""
+class RemediationActionListView(generics.ListCreateAPIView):
+    """Flat list + create — all remediation actions."""
 
     serializer_class = RemediationActionSerializer
     permission_classes = [IsAuditorOrAbove]
@@ -81,11 +81,24 @@ class RemediationActionListView(generics.ListAPIView):
 
     def get_queryset(self):
         qs = RemediationAction.objects.select_related(
-            "finding", "finding__engagement", "owner", "created_by"
+            "finding", "finding__engagement", "owner", "evidence", "created_by"
         )
         if engagement_pk := self.request.query_params.get("engagement"):
             qs = qs.filter(finding__engagement_id=engagement_pk)
         return qs
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+
+
+class RemediationActionFlatDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """Flat PATCH/DELETE for a single remediation action (no finding scope)."""
+
+    serializer_class = RemediationActionSerializer
+    permission_classes = [IsAuditorOrAbove]
+    queryset = RemediationAction.objects.select_related(
+        "finding", "owner", "evidence", "created_by"
+    )
 
 
 class RemediationActionListCreateView(generics.ListCreateAPIView):
@@ -134,6 +147,19 @@ class EvidenceListCreateView(generics.ListCreateAPIView):
         serializer.save(**kwargs)
 
 
+class EvidenceFlatListCreateView(generics.ListCreateAPIView):
+    """Flat list + create for all evidence records."""
+
+    serializer_class = EvidenceSerializer
+    permission_classes = [IsAuditorOrAbove]
+
+    def get_queryset(self):
+        return Evidence.objects.select_related("uploaded_by", "finding", "engagement")
+
+    def perform_create(self, serializer):
+        serializer.save(uploaded_by=self.request.user)
+
+
 class EvidenceDetailView(generics.RetrieveDestroyAPIView):
     serializer_class = EvidenceSerializer
     permission_classes = [IsAuditorOrAbove]
@@ -174,7 +200,7 @@ class ApprovalRequestListCreateView(generics.ListCreateAPIView):
         ).select_related("requested_by", "approver")
 
 
-class ApprovalRequestDetailView(generics.RetrieveAPIView):
+class ApprovalRequestDetailView(generics.RetrieveDestroyAPIView):
     serializer_class = ApprovalRequestSerializer
     permission_classes = [permissions.IsAuthenticated]
 

@@ -25,12 +25,15 @@ class BusinessProcessSerializer(serializers.ModelSerializer):
 class BusinessObjectiveSerializer(serializers.ModelSerializer):
     owner_name = serializers.SerializerMethodField()
     process_name = serializers.SerializerMethodField()
+    process_id = serializers.SerializerMethodField()
 
     class Meta:
         model = BusinessObjective
         fields = (
-            "id", "name", "description", "business_process", "process_name",
-            "owner", "owner_name", "created_by", "created_at", "updated_at",
+            "id", "name", "description",
+            "business_process", "process_name", "process_id",
+            "owner", "owner_name",
+            "created_by", "created_at", "updated_at",
         )
         read_only_fields = ("id", "created_by", "created_at", "updated_at")
 
@@ -40,6 +43,9 @@ class BusinessObjectiveSerializer(serializers.ModelSerializer):
     def get_process_name(self, obj) -> str:
         return obj.business_process.name if obj.business_process else ""
 
+    def get_process_id(self, obj) -> str:
+        return str(obj.business_process.id) if obj.business_process else ""
+
     def create(self, validated_data):
         validated_data["created_by"] = self.context["request"].user
         return super().create(validated_data)
@@ -47,11 +53,12 @@ class BusinessObjectiveSerializer(serializers.ModelSerializer):
 
 class AuditLogSerializer(serializers.ModelSerializer):
     user_email = serializers.SerializerMethodField()
+    user_name = serializers.SerializerMethodField()
 
     class Meta:
         model = AuditLog
         fields = (
-            "id", "user", "user_email", "action", "entity_type",
+            "id", "user", "user_email", "user_name", "action", "entity_type",
             "entity_id", "entity_name", "old_values", "new_values",
             "ip_address", "timestamp",
         )
@@ -59,3 +66,6 @@ class AuditLogSerializer(serializers.ModelSerializer):
 
     def get_user_email(self, obj) -> str:
         return obj.user.email if obj.user else ""
+
+    def get_user_name(self, obj) -> str:
+        return obj.user.get_full_name() if obj.user else ""

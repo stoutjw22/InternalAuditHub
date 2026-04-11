@@ -59,3 +59,26 @@ class EngagementRiskDetailView(generics.RetrieveUpdateDestroyAPIView):
         return EngagementRisk.objects.filter(
             engagement_id=self.kwargs["engagement_pk"]
         ).select_related("risk")
+
+
+class EngagementRiskFlatListCreateView(generics.ListCreateAPIView):
+    """Flat list of ALL engagement risks across all engagements."""
+
+    serializer_class = EngagementRiskSerializer
+    permission_classes = [IsAuditorOrAbove]
+
+    def get_queryset(self):
+        return EngagementRisk.objects.select_related(
+            "risk", "risk__owner", "objective", "engagement", "created_by"
+        )
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+
+
+class EngagementRiskFlatDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """Flat detail/delete for a single engagement risk (no engagement scope)."""
+
+    serializer_class = EngagementRiskSerializer
+    permission_classes = [IsAuditorOrAbove]
+    queryset = EngagementRisk.objects.select_related("risk", "risk__owner", "objective", "engagement")

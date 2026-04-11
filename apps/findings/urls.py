@@ -5,10 +5,12 @@ from .views import (
     ApprovalRequestDetailView,
     ApprovalRequestListCreateView,
     EvidenceDetailView,
+    EvidenceFlatListCreateView,
     EvidenceListCreateView,
     FindingDetailView,
     FindingListCreateView,
     RemediationActionDetailView,
+    RemediationActionFlatDetailView,
     RemediationActionListCreateView,
     RemediationActionListView,
 )
@@ -18,11 +20,15 @@ urlpatterns = [
     path("findings/", FindingListCreateView.as_view(), name="finding-list"),
     path("findings/<uuid:pk>/", FindingDetailView.as_view(), name="finding-detail"),
     path("engagements/<uuid:engagement_pk>/findings/", FindingListCreateView.as_view(), name="engagement-finding-list"),
-    # Remediation actions — flat list and nested under a finding
+    # Remediation actions — flat list/create and individual PATCH/DELETE
     path("remediations/", RemediationActionListView.as_view(), name="remediation-flat-list"),
+    path("remediations/<uuid:pk>/", RemediationActionFlatDetailView.as_view(), name="remediation-flat-detail"),
+    # Remediation actions nested under finding (legacy)
     path("findings/<uuid:finding_pk>/remediations/", RemediationActionListCreateView.as_view(), name="remediation-list"),
     path("findings/<uuid:finding_pk>/remediations/<uuid:pk>/", RemediationActionDetailView.as_view(), name="remediation-detail"),
-    # Evidence
+    # Evidence — flat and nested
+    path("evidence/", EvidenceFlatListCreateView.as_view(), name="evidence-flat-list"),
+    path("evidence/<uuid:pk>/", EvidenceDetailView.as_view(), name="evidence-flat-detail"),
     path("findings/<uuid:finding_pk>/evidence/", EvidenceListCreateView.as_view(), name="finding-evidence-list"),
     path("findings/<uuid:finding_pk>/evidence/<uuid:pk>/", EvidenceDetailView.as_view(), name="finding-evidence-detail"),
     path("engagements/<uuid:engagement_pk>/evidence/", EvidenceListCreateView.as_view(), name="engagement-evidence-list"),

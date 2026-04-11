@@ -1,652 +1,854 @@
-import { useState, useMemo } from "react";
-import { Plus, Pencil, Trash2, AlertTriangle, Search, X } from "lucide-react";
-import {
-  useFindingList,
-  useCreateFinding,
-  useUpdateFinding,
-  useDeleteFinding,
-  useUsersByRole,
-  useEngagementList,
-} from "@/generated/hooks";
-import {
-  FINDING_TYPE_LABELS,
-  FINDING_SEVERITY_LABELS,
-  FINDING_SEVERITY_COLORS,
-  FINDING_STATUS_LABELS,
-  type Finding,
-  type FindingListItem,
-  type FindingType,
-  type FindingSeverity,
-  type FindingStatus,
-} from "@/generated/models";
-import { cn, formatDate } from "@/lib/utils";
-
-// ── Types ─────────────────────────────────────────────────────────────────────
-
-interface FindingFormState {
-  title: string;
-  description: string;
-  engagement: string;
-  finding_type: FindingType | "";
-  severity: FindingSeverity | "";
-  status: FindingStatus | "";
-  owner: string;
-  due_date: string;
-  root_cause: string;
-  management_response: string;
-}
-
-const EMPTY_FORM: FindingFormState = {
-  title: "",
-  description: "",
-  engagement: "",
-  finding_type: "",
-  severity: "",
-  status: "",
-  owner: "",
-  due_date: "",
-  root_cause: "",
-  management_response: "",
-};
-
-// ── Badges ────────────────────────────────────────────────────────────────────
-
-function SeverityBadge({ severity, label }: { severity: FindingSeverity; label: string }) {
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold",
-        FINDING_SEVERITY_COLORS[severity] ?? "bg-gray-100 text-gray-700"
-      )}
-    >
-      {label}
-    </span>
-  );
-}
-
-function StatusBadge({ label }: { label: string }) {
-  return (
-    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700">
-      {label}
-    </span>
-  );
-}
-
-// ── Skeleton ──────────────────────────────────────────────────────────────────
-
-function TableSkeleton({ rows = 5 }: { rows?: number }) {
-  return (
-    <>
-      {Array.from({ length: rows }).map((_, i) => (
-        <tr key={i} className="border-b border-gray-100">
-          {Array.from({ length: 7 }).map((__, j) => (
-            <td key={j} className="px-4 py-3">
-              <div className="h-4 bg-gray-200 rounded animate-pulse w-3/4" />
-            </td>
-          ))}
-        </tr>
-      ))}
-    </>
-  );
-}
-
-// ── Field helper ──────────────────────────────────────────────────────────────
-
-function Field({
-  label,
-  required,
-  children,
-}: {
-  label: string;
-  required?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex flex-col gap-1">
-      <label className="text-xs font-medium text-gray-600">
-        {label}
-        {required && <span className="text-red-500 ml-0.5">*</span>}
-      </label>
-      {children}
-    </div>
-  );
-}
-
-const inputCls =
-  "border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500";
-
-// ── Modal ──────────────────────────────────────────────────────────────────────
-
-function FindingModal({
-  editing,
-  onClose,
-}: {
-  editing: FindingListItem | null;
-  onClose: () => void;
-}) {
-  // When editing we only have FindingListItem fields in the list view.
-  // We initialise the form with what we have; the API will accept partial patches.
-  const [form, setForm] = useState<FindingFormState>(
-    editing
-      ? {
-          title: editing.title,
-          description: "",
-          engagement: "",
-          finding_type: editing.finding_type,
-          severity: editing.severity,
-          status: editing.status,
-          owner: editing.owner ?? "",
-          due_date: editing.due_date ?? "",
-          root_cause: "",
-          management_response: "",
-        }
-      : EMPTY_FORM
-  );
-  const [error, setError] = useState<string | null>(null);
-
-  const createFinding = useCreateFinding();
-  const updateFinding = useUpdateFinding();
-  const { data: owners } = useUsersByRole("finding-owners");
-  const { data: engagementsPage } = useEngagementList();
-  const engagements = engagementsPage?.results ?? [];
-
-  const isPending = createFinding.isPending || updateFinding.isPending;
-
-  function set(field: keyof FindingFormState, value: string) {
-    setForm((f) => ({ ...f, [field]: value }));
-  }
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    if (!form.title.trim()) { setError("Title is required."); return; }
-    if (!editing && !form.engagement) { setError("Engagement is required."); return; }
-    if (!form.severity) { setError("Severity is required."); return; }
-    if (!form.status) { setError("Status is required."); return; }
-
-    const payload: Partial<Finding> = {
-      title: form.title.trim(),
-      description: form.description,
-      finding_type: form.finding_type as FindingType || undefined,
-      severity: form.severity as FindingSeverity,
-      status: form.status as FindingStatus,
-      owner: form.owner || null,
-      due_date: form.due_date || null,
-      root_cause: form.root_cause,
-      management_response: form.management_response,
-      ...(form.engagement ? { engagement: form.engagement } : {}),
-    };
-
-    try {
-      if (editing) {
-        await updateFinding.mutateAsync({ id: editing.id, ...payload });
-      } else {
-        await createFinding.mutateAsync(payload);
-      }
-      onClose();
-    } catch {
-      setError("Failed to save finding. Please try again.");
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900">
-            {editing ? "Edit Finding" : "Add Finding"}
-          </h2>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 transition-colors"
-          >
-            <X size={20} />
-          </button>
-        </div>
-
-        {/* Body */}
-        <form id="finding-form" onSubmit={handleSubmit} className="overflow-y-auto flex-1 px-6 py-5 space-y-4">
-          {error && (
-            <div className="rounded-md bg-red-50 border border-red-200 px-4 py-2 text-sm text-red-700">
-              {error}
-            </div>
-          )}
-
-          {/* Title */}
-          <Field label="Title" required>
-            <input
-              type="text"
-              value={form.title}
-              onChange={(e) => set("title", e.target.value)}
-              className={inputCls}
-              placeholder="Finding title"
-            />
-          </Field>
-
-          {/* Description */}
-          <Field label="Description">
-            <textarea
-              value={form.description}
-              onChange={(e) => set("description", e.target.value)}
-              rows={2}
-              className={cn(inputCls, "resize-none")}
-              placeholder="Describe the finding..."
-            />
-          </Field>
-
-          {/* Engagement (required on create) */}
-          <Field label="Engagement" required={!editing}>
-            <select
-              value={form.engagement}
-              onChange={(e) => set("engagement", e.target.value)}
-              className={inputCls}
-              disabled={!!editing}
-            >
-              <option value="">Select engagement</option>
-              {engagements.map((eng) => (
-                <option key={eng.id} value={eng.id}>
-                  {eng.name}
-                </option>
-              ))}
-            </select>
-            {editing && (
-              <p className="text-xs text-gray-400 mt-0.5">Engagement cannot be changed after creation.</p>
-            )}
-          </Field>
-
-          {/* Type + Severity */}
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="Finding Type">
-              <select
-                value={form.finding_type}
-                onChange={(e) => set("finding_type", e.target.value)}
-                className={inputCls}
-              >
-                <option value="">Select type</option>
-                {Object.entries(FINDING_TYPE_LABELS).map(([k, v]) => (
-                  <option key={k} value={k}>{v}</option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Severity" required>
-              <select
-                value={form.severity}
-                onChange={(e) => set("severity", e.target.value)}
-                className={inputCls}
-              >
-                <option value="">Select severity</option>
-                {Object.entries(FINDING_SEVERITY_LABELS).map(([k, v]) => (
-                  <option key={k} value={k}>{v}</option>
-                ))}
-              </select>
-            </Field>
-          </div>
-
-          {/* Status + Due Date */}
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="Status" required>
-              <select
-                value={form.status}
-                onChange={(e) => set("status", e.target.value)}
-                className={inputCls}
-              >
-                <option value="">Select status</option>
-                {Object.entries(FINDING_STATUS_LABELS).map(([k, v]) => (
-                  <option key={k} value={k}>{v}</option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Due Date">
-              <input
-                type="date"
-                value={form.due_date}
-                onChange={(e) => set("due_date", e.target.value)}
-                className={inputCls}
-              />
-            </Field>
-          </div>
-
-          {/* Owner */}
-          <Field label="Owner">
-            <select
-              value={form.owner}
-              onChange={(e) => set("owner", e.target.value)}
-              className={inputCls}
-            >
-              <option value="">Unassigned</option>
-              {owners?.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.full_name} — {u.department}
-                </option>
-              ))}
-            </select>
-          </Field>
-
-          {/* Root Cause */}
-          <Field label="Root Cause">
-            <textarea
-              value={form.root_cause}
-              onChange={(e) => set("root_cause", e.target.value)}
-              rows={2}
-              className={cn(inputCls, "resize-none")}
-              placeholder="Describe the root cause..."
-            />
-          </Field>
-
-          {/* Management Response */}
-          <Field label="Management Response">
-            <textarea
-              value={form.management_response}
-              onChange={(e) => set("management_response", e.target.value)}
-              rows={2}
-              className={cn(inputCls, "resize-none")}
-              placeholder="Management's response to the finding..."
-            />
-          </Field>
-        </form>
-
-        {/* Footer */}
-        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200 bg-gray-50 rounded-b-xl">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            form="finding-form"
-            disabled={isPending}
-            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-60 transition-colors"
-          >
-            {isPending ? "Saving…" : editing ? "Save Changes" : "Create Finding"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Delete confirm ─────────────────────────────────────────────────────────────
-
-function DeleteConfirm({
-  finding,
-  onClose,
-}: {
-  finding: FindingListItem;
-  onClose: () => void;
-}) {
-  const deleteFinding = useDeleteFinding();
-  const [error, setError] = useState<string | null>(null);
-
-  async function handleDelete() {
-    setError(null);
-    try {
-      await deleteFinding.mutateAsync(finding.id);
-      onClose();
-    } catch {
-      setError("Failed to delete. Please try again.");
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
-        <h2 className="text-lg font-semibold text-gray-900">Delete Finding</h2>
-        <p className="mt-2 text-sm text-gray-600">
-          Are you sure you want to delete{" "}
-          <span className="font-medium">"{finding.title}"</span>? This action cannot be undone.
-        </p>
-        {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
-        <div className="mt-5 flex justify-end gap-3">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleDelete}
-            disabled={deleteFinding.isPending}
-            className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 disabled:opacity-60"
-          >
-            {deleteFinding.isPending ? "Deleting…" : "Delete"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Page ───────────────────────────────────────────────────────────────────────
-
 export default function FindingsPage() {
-  const [search, setSearch] = useState("");
-  const [filterSeverity, setFilterSeverity] = useState<FindingSeverity | "">("");
-  const [filterStatus, setFilterStatus] = useState<FindingStatus | "">("");
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editingFinding, setEditingFinding] = useState<FindingListItem | null>(null);
-  const [deletingFinding, setDeletingFinding] = useState<FindingListItem | null>(null);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [editingFinding, setEditingFinding] = useState<Finding | null>(null);
+  const [deleteFinding, setDeleteFinding] = useState<Finding | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [severityFilter, setSeverityFilter] = useState<string>('all');
+  const [sortField, setSortField] = useState<SortField | null>(null);
+  const [sortDirection, setSortDirection] = useState<SortDirection>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showBulkDeleteDialog, setShowBulkDeleteDialog] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
 
-  const queryParams = useMemo(() => {
-    const p: Record<string, unknown> = {};
-    if (search) p.search = search;
-    if (filterSeverity) p.severity = filterSeverity;
-    if (filterStatus) p.status = filterStatus;
-    return p;
-  }, [search, filterSeverity, filterStatus]);
+  const { data: findings = [], isLoading } = useFindingList();
+  const { data: controls = [] } = useControlList();
+  const { data: auditUsers = [] } = useAuditUserList();
+  const { data: findingOwners = [] } = useFindingOwnerList();
+  const createMutation = useCreateFinding();
+  const updateMutation = useUpdateFinding();
+  const deleteMutation = useDeleteFinding();
 
-  const { data, isLoading, error } = useFindingList(queryParams);
-  const findings = data?.results ?? [];
+  const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm<FindingFormData>();
 
-  function openCreate() {
+  const filteredAndSortedFindings = useMemo(() => {
+    let result = findings.filter(finding =>
+      finding.findingtitle.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      finding.recommendation?.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+
+    // Apply severity filter
+    if (severityFilter !== 'all') {
+      result = result.filter(finding => finding.severityKey === severityFilter);
+    }
+
+    // Apply sorting
+    if (sortField && sortDirection) {
+      result = [...result].sort((a, b) => {
+        let aVal: string;
+        let bVal: string;
+
+        switch (sortField) {
+          case 'findingtitle':
+            aVal = a.findingtitle.toLowerCase();
+            bVal = b.findingtitle.toLowerCase();
+            break;
+          case 'severity':
+            aVal = a.severityKey || '';
+            bVal = b.severityKey || '';
+            break;
+          case 'control':
+            aVal = (a.controlname?.controlname || '').toLowerCase();
+            bVal = (b.controlname?.controlname || '').toLowerCase();
+            break;
+          case 'owner':
+            aVal = (a.findingownername?.findingownername || '').toLowerCase();
+            bVal = (b.findingownername?.findingownername || '').toLowerCase();
+            break;
+          default:
+            return 0;
+        }
+
+        if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
+        if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
+
+    return result;
+  }, [findings, searchQuery, severityFilter, sortField, sortDirection]);
+
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      if (sortDirection === 'asc') {
+        setSortDirection('desc');
+      } else if (sortDirection === 'desc') {
+        setSortField(null);
+        setSortDirection(null);
+      }
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  const getSortIcon = (field: SortField) => {
+    if (sortField !== field) return <ArrowUpDown className="w-4 h-4 ml-1 opacity-40" />;
+    if (sortDirection === 'asc') return <ArrowUp className="w-4 h-4 ml-1" />;
+    return <ArrowDown className="w-4 h-4 ml-1" />;
+  };
+
+  const clearFilters = () => {
+    setSearchQuery('');
+    setSeverityFilter('all');
+    setSortField(null);
+    setSortDirection(null);
+  };
+
+  const hasActiveFilters = searchQuery || severityFilter !== 'all' || sortField;
+
+  // Selection handlers
+  const toggleSelectAll = useCallback(() => {
+    if (selectedIds.size === filteredAndSortedFindings.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredAndSortedFindings.map(f => f.id)));
+    }
+  }, [selectedIds.size, filteredAndSortedFindings]);
+
+  const toggleSelect = useCallback((id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }, []);
+
+  const clearSelection = useCallback(() => {
+    setSelectedIds(new Set());
+  }, []);
+
+  const isAllSelected = filteredAndSortedFindings.length > 0 && selectedIds.size === filteredAndSortedFindings.length;
+  const isSomeSelected = selectedIds.size > 0 && selectedIds.size < filteredAndSortedFindings.length;
+
+  // Excel Export
+  const exportToExcel = useCallback(() => {
+    const dataToExport = selectedIds.size > 0
+      ? filteredAndSortedFindings.filter(f => selectedIds.has(f.id))
+      : filteredAndSortedFindings;
+
+    if (dataToExport.length === 0) {
+      toast.error('No data to export');
+      return;
+    }
+
+    const headers = ['Finding Title', 'Recommendation', 'Severity', 'Control', 'Owner'];
+    const rows = dataToExport.map(finding => ({
+      'Finding Title': finding.findingtitle,
+      'Recommendation': finding.recommendation || '',
+      'Severity': finding.severityKey ? FindingSeverityKeyToLabel[finding.severityKey] : '',
+      'Control': finding.controlname?.controlname || '',
+      'Owner': finding.findingownername?.findingownername || ''
+    }));
+
+    const xmlContent = generateExcelXML(rows, headers);
+    const blob = new Blob([xmlContent], { type: 'application/vnd.ms-excel' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `findings-export-${new Date().toISOString().split('T')[0]}.xls`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+
+    toast.success(`Exported ${dataToExport.length} finding${dataToExport.length !== 1 ? 's' : ''} to Excel`);
+  }, [filteredAndSortedFindings, selectedIds]);
+
+  // CSV Export
+  const exportToCSV = useCallback(() => {
+    const dataToExport = selectedIds.size > 0
+      ? filteredAndSortedFindings.filter(f => selectedIds.has(f.id))
+      : filteredAndSortedFindings;
+
+    if (dataToExport.length === 0) {
+      toast.error('No data to export');
+      return;
+    }
+
+    const headers = ['Finding Title', 'Recommendation', 'Severity', 'Control', 'Owner'];
+    const rows = dataToExport.map(finding => [
+      finding.findingtitle,
+      finding.recommendation || '',
+      finding.severityKey ? FindingSeverityKeyToLabel[finding.severityKey] : '',
+      finding.controlname?.controlname || '',
+      finding.findingownername?.findingownername || ''
+    ]);
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `findings-export-${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+
+    toast.success(`Exported ${dataToExport.length} finding${dataToExport.length !== 1 ? 's' : ''} to CSV`);
+  }, [filteredAndSortedFindings, selectedIds]);
+
+  // Excel Import
+  const handleImport = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setIsImporting(true);
+    
+    try {
+      const text = await file.text();
+      let importedData: Array<Record<string, string>> = [];
+
+      if (file.name.endsWith('.csv')) {
+        // Parse CSV
+        const lines = text.split('\n').filter(line => line.trim());
+        if (lines.length < 2) {
+          toast.error('No data found in CSV file');
+          return;
+        }
+        const headers = lines[0].split(',').map(h => h.replace(/^"|"$/g, '').trim());
+        for (let i = 1; i < lines.length; i++) {
+          const values = lines[i].match(/("[^"]*"|[^,]+)/g) || [];
+          const row: Record<string, string> = {};
+          values.forEach((val, idx) => {
+            if (headers[idx]) {
+              row[headers[idx]] = val.replace(/^"|"$/g, '').replace(/""/g, '"').trim();
+            }
+          });
+          if (row['Finding Title']) {
+            importedData.push(row);
+          }
+        }
+      } else {
+        // Parse Excel XML
+        importedData = parseExcelXML(text);
+      }
+
+      if (importedData.length === 0) {
+        toast.error('No valid data found in file');
+        return;
+      }
+
+      // Create findings from imported data
+      let successCount = 0;
+      let errorCount = 0;
+
+      for (const row of importedData) {
+        const findingTitle = row['Finding Title'];
+        if (!findingTitle) continue;
+
+        // Find matching control and owner by name
+        const matchingControl = controls.find(c => 
+          c.controlname.toLowerCase() === (row['Control'] || '').toLowerCase()
+        );
+        const matchingOwner = findingOwners.find(o => 
+          o.findingownername.toLowerCase() === (row['Owner'] || '').toLowerCase()
+        );
+        const matchingSeverity = severityOptions.find(s =>
+          s.label.toLowerCase() === (row['Severity'] || '').toLowerCase()
+        );
+
+        try {
+          await createMutation.mutateAsync({
+            findingtitle: findingTitle,
+            recommendation: row['Recommendation'] || undefined,
+            severityKey: matchingSeverity?.key,
+            controlname: matchingControl ? { id: matchingControl.id, controlname: matchingControl.controlname } : undefined,
+            findingownername: matchingOwner ? { id: matchingOwner.id, findingownername: matchingOwner.findingownername } : undefined,
+          });
+          successCount++;
+        } catch {
+          errorCount++;
+        }
+      }
+
+      if (successCount > 0) {
+        toast.success(`Imported ${successCount} finding${successCount !== 1 ? 's' : ''} successfully`);
+      }
+      if (errorCount > 0) {
+        toast.error(`Failed to import ${errorCount} finding${errorCount !== 1 ? 's' : ''}`);
+      }
+    } catch {
+      toast.error('Failed to parse file');
+    } finally {
+      setIsImporting(false);
+      // Reset file input
+      event.target.value = '';
+    }
+  }, [createMutation, controls, findingOwners]);
+
+  // Bulk delete
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    
+    try {
+      await Promise.all(
+        Array.from(selectedIds).map(id => deleteMutation.mutateAsync(id))
+      );
+      toast.success(`Deleted ${selectedIds.size} finding${selectedIds.size !== 1 ? 's' : ''}`);
+      setSelectedIds(new Set());
+      setShowBulkDeleteDialog(false);
+    } catch {
+      toast.error('Failed to delete some findings');
+    }
+  };
+
+  const openCreateDialog = () => {
     setEditingFinding(null);
-    setModalOpen(true);
-  }
+    reset({ findingtitle: '', recommendation: '', severityKey: undefined, controlId: '', auditUserId: '', findingOwnerId: '' });
+    setIsDialogOpen(true);
+  };
 
-  function openEdit(finding: FindingListItem) {
+  const openEditDialog = (finding: Finding) => {
     setEditingFinding(finding);
-    setModalOpen(true);
-  }
+    reset({
+      findingtitle: finding.findingtitle,
+      recommendation: finding.recommendation || '',
+      severityKey: finding.severityKey,
+      controlId: finding.controlname?.id || '',
+      auditUserId: finding.auditusername?.id || '',
+      findingOwnerId: finding.findingownername?.id || '',
+    });
+    setIsDialogOpen(true);
+  };
 
-  function closeModal() {
-    setModalOpen(false);
-    setEditingFinding(null);
-  }
+  const onSubmit = async (data: FindingFormData) => {
+    try {
+      const control = controls.find(c => c.id === data.controlId);
+      const auditUser = auditUsers.find(u => u.id === data.auditUserId);
+      const findingOwner = findingOwners.find(o => o.id === data.findingOwnerId);
+      
+      const payload = {
+        findingtitle: data.findingtitle,
+        recommendation: data.recommendation,
+        severityKey: data.severityKey,
+        controlname: control ? { id: control.id, controlname: control.controlname } : undefined,
+        auditusername: auditUser ? { id: auditUser.id, auditusername: auditUser.auditusername } : undefined,
+        findingownername: findingOwner ? { id: findingOwner.id, findingownername: findingOwner.findingownername } : undefined,
+      };
 
-  const hasFilters = !!(search || filterSeverity || filterStatus);
+      if (editingFinding) {
+        await updateMutation.mutateAsync({ id: editingFinding.id, changedFields: payload });
+        toast.success('Finding updated successfully');
+      } else {
+        await createMutation.mutateAsync(payload);
+        toast.success('Finding created successfully');
+      }
+      setIsDialogOpen(false);
+      reset();
+    } catch {
+      toast.error('An error occurred');
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteFinding) return;
+    try {
+      await deleteMutation.mutateAsync(deleteFinding.id);
+      toast.success('Finding deleted successfully');
+      setDeleteFinding(null);
+    } catch {
+      toast.error('Failed to delete finding');
+    }
+  };
+
+  const selectedSeverity = watch('severityKey');
+  const selectedControlId = watch('controlId');
+  const selectedAuditUserId = watch('auditUserId');
+  const selectedFindingOwnerId = watch('findingOwnerId');
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Page header */}
-        <div className="flex items-center justify-between mb-6">
+    <div className="p-6 lg:p-8">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, ease: 'easeOut' as const }}
+        className="max-w-7xl mx-auto space-y-6"
+      >
+        {/* Header */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <AlertTriangle className="text-orange-500" size={28} />
+            <div className="w-12 h-12 bg-chart-3/10 rounded-xl flex items-center justify-center">
+              <AlertCircle className="w-6 h-6 text-chart-3" />
+            </div>
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">Findings</h1>
-              <p className="text-sm text-gray-500 mt-0.5">
-                {data?.count ?? 0} finding{(data?.count ?? 0) !== 1 ? "s" : ""} total
+              <h1 className="font-display text-2xl lg:text-3xl font-bold text-foreground">
+                Audit Findings
+              </h1>
+              <p className="text-muted-foreground text-sm">
+                {findings.length} finding{findings.length !== 1 ? 's' : ''} logged
               </p>
             </div>
           </div>
-          <button
-            onClick={openCreate}
-            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
-          >
-            <Plus size={16} />
-            Add Finding
-          </button>
-        </div>
-
-        {/* Filter bar */}
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm px-4 py-3 mb-4 flex flex-wrap gap-3 items-center">
-          <div className="relative flex-1 min-w-[180px]">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search findings…"
-              className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
+          <div className="flex items-center gap-2">
+            <label className="cursor-pointer">
+              <input
+                type="file"
+                accept=".csv,.xls,.xml"
+                className="hidden"
+                onChange={handleImport}
+                disabled={isImporting}
+              />
+              <Button variant="outline" className="gap-2" asChild disabled={isImporting}>
+                <span>
+                  {isImporting ? <Spinner className="w-4 h-4" /> : <Upload className="w-4 h-4" />}
+                  Import
+                </span>
+              </Button>
+            </label>
+            <Button variant="outline" onClick={exportToExcel} className="gap-2">
+              <FileSpreadsheet className="w-4 h-4" />
+              Export Excel
+            </Button>
+            <Button variant="outline" onClick={exportToCSV} className="gap-2">
+              <Download className="w-4 h-4" />
+              Export CSV
+            </Button>
+            <Button onClick={openCreateDialog} className="gap-2">
+              <Plus className="w-4 h-4" />
+              Log Finding
+            </Button>
           </div>
-
-          <select
-            value={filterSeverity}
-            onChange={(e) => setFilterSeverity(e.target.value as FindingSeverity | "")}
-            className="text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="">All Severities</option>
-            {Object.entries(FINDING_SEVERITY_LABELS).map(([k, v]) => (
-              <option key={k} value={k}>{v}</option>
-            ))}
-          </select>
-
-          <select
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value as FindingStatus | "")}
-            className="text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="">All Statuses</option>
-            {Object.entries(FINDING_STATUS_LABELS).map(([k, v]) => (
-              <option key={k} value={k}>{v}</option>
-            ))}
-          </select>
-
-          {hasFilters && (
-            <button
-              onClick={() => {
-                setSearch("");
-                setFilterSeverity("");
-                setFilterStatus("");
-              }}
-              className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700"
-            >
-              <X size={12} /> Clear
-            </button>
-          )}
         </div>
+
+        {/* Bulk Actions Bar */}
+        <AnimatePresence>
+          {selectedIds.size > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.2 }}
+            >
+              <Card className="border-chart-3/20 bg-chart-3/5 shadow-sm">
+                <CardContent className="p-3 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <CheckSquare className="w-5 h-5 text-chart-3" />
+                    <span className="font-medium text-foreground">
+                      {selectedIds.size} finding{selectedIds.size !== 1 ? 's' : ''} selected
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={exportToExcel} className="gap-2">
+                      <FileSpreadsheet className="w-4 h-4" />
+                      Export Excel
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={exportToCSV} className="gap-2">
+                      <Download className="w-4 h-4" />
+                      Export CSV
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => setShowBulkDeleteDialog(true)}
+                      className="gap-2"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      Delete Selected
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={clearSelection}>
+                      <X className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Search and Filters */}
+        <Card className="border-0 shadow-sm">
+          <CardContent className="p-4">
+            <div className="flex flex-col lg:flex-row gap-3">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search findings..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Select value={severityFilter} onValueChange={setSeverityFilter}>
+                  <SelectTrigger className="w-[160px]">
+                    <Filter className="w-4 h-4 mr-2 text-muted-foreground" />
+                    <SelectValue placeholder="Filter by severity" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Severities</SelectItem>
+                    {severityOptions.map((option) => (
+                      <SelectItem key={option.key} value={option.key}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {hasActiveFilters && (
+                  <Button variant="ghost" size="icon" onClick={clearFilters} className="text-muted-foreground hover:text-foreground">
+                    <X className="w-4 h-4" />
+                  </Button>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Table */}
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200 text-sm">
-              <thead className="bg-gray-50">
-                <tr>
-                  {["Title", "Severity", "Status", "Owner", "Due Date", "Actions"].map((col) => (
-                    <th
-                      key={col}
-                      className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap"
-                    >
-                      {col}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {isLoading ? (
-                  <TableSkeleton rows={6} />
-                ) : error ? (
-                  <tr>
-                    <td colSpan={6} className="px-4 py-10 text-center text-sm text-red-500">
-                      Failed to load findings. Please refresh.
-                    </td>
-                  </tr>
-                ) : findings.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="px-4 py-16 text-center">
-                      <AlertTriangle className="mx-auto text-gray-300 mb-3" size={40} />
-                      <p className="text-sm font-medium text-gray-500">No findings found</p>
-                      <p className="text-xs text-gray-400 mt-1">
-                        {hasFilters
-                          ? "Try adjusting your filters."
-                          : "No findings have been recorded yet."}
-                      </p>
-                    </td>
-                  </tr>
-                ) : (
-                  findings.map((finding) => (
-                    <tr key={finding.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-4 py-3 font-medium text-gray-900 max-w-[260px]">
-                        <span className="line-clamp-2">{finding.title}</span>
-                        <span className="block text-xs text-gray-400 font-normal mt-0.5">
-                          {FINDING_TYPE_LABELS[finding.finding_type] ?? finding.finding_type}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <SeverityBadge
-                          severity={finding.severity}
-                          label={finding.severity_display}
-                        />
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <StatusBadge label={finding.status_display} />
-                      </td>
-                      <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
-                        {finding.owner_name || <span className="text-gray-400">—</span>}
-                      </td>
-                      <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
-                        {finding.due_date ? (
-                          <span
-                            className={cn(
-                              formatDate(finding.due_date),
-                              new Date(finding.due_date) < new Date() &&
-                                finding.status !== "resolved" &&
-                                finding.status !== "closed"
-                                ? "text-red-600 font-medium"
-                                : ""
-                            )}
-                          >
-                            {formatDate(finding.due_date)}
-                          </span>
-                        ) : (
-                          <span className="text-gray-400">—</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => openEdit(finding)}
-                            title="Edit"
-                            className="p-1.5 rounded-md text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
-                          >
-                            <Pencil size={15} />
-                          </button>
-                          <button
-                            onClick={() => setDeletingFinding(finding)}
-                            title="Delete"
-                            className="p-1.5 rounded-md text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-                          >
-                            <Trash2 size={15} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
+        <Card className="border-0 shadow-sm overflow-hidden">
+          <CardContent className="p-0">
+            {isLoading ? (
+              <div className="flex items-center justify-center py-16">
+                <Spinner className="w-8 h-8" />
+              </div>
+            ) : filteredAndSortedFindings.length === 0 ? (
+              <div className="text-center py-16">
+                <AlertCircle className="w-12 h-12 text-muted-foreground/50 mx-auto mb-4" />
+                <p className="font-medium text-foreground">No findings found</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  {searchQuery || severityFilter !== 'all' ? 'Try adjusting your filters' : 'Get started by logging your first finding'}
+                </p>
+                {!searchQuery && severityFilter === 'all' && (
+                  <Button onClick={openCreateDialog} className="gap-2 mt-4">
+                    <Plus className="w-4 h-4" />
+                    Log Finding
+                  </Button>
                 )}
-              </tbody>
-            </table>
-          </div>
+                {(searchQuery || severityFilter !== 'all') && (
+                  <Button variant="outline" onClick={clearFilters} className="gap-2 mt-4">
+                    <X className="w-4 h-4" />
+                    Clear Filters
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-muted/50">
+                    <TableHead className="w-[50px]">
+                      <Checkbox
+                        checked={isAllSelected}
+                        onCheckedChange={toggleSelectAll}
+                        aria-label="Select all"
+                        className={isSomeSelected ? 'data-[state=checked]:bg-chart-3/50' : ''}
+                      />
+                    </TableHead>
+                    <TableHead 
+                      className="font-semibold cursor-pointer select-none hover:bg-muted/70 transition-colors"
+                      onClick={() => handleSort('findingtitle')}
+                    >
+                      <div className="flex items-center">
+                        Finding Title
+                        {getSortIcon('findingtitle')}
+                      </div>
+                    </TableHead>
+                    <TableHead 
+                      className="font-semibold cursor-pointer select-none hover:bg-muted/70 transition-colors"
+                      onClick={() => handleSort('severity')}
+                    >
+                      <div className="flex items-center">
+                        Severity
+                        {getSortIcon('severity')}
+                      </div>
+                    </TableHead>
+                    <TableHead 
+                      className="font-semibold cursor-pointer select-none hover:bg-muted/70 transition-colors"
+                      onClick={() => handleSort('control')}
+                    >
+                      <div className="flex items-center">
+                        Control
+                        {getSortIcon('control')}
+                      </div>
+                    </TableHead>
+                    <TableHead 
+                      className="font-semibold cursor-pointer select-none hover:bg-muted/70 transition-colors"
+                      onClick={() => handleSort('owner')}
+                    >
+                      <div className="flex items-center">
+                        Owner
+                        {getSortIcon('owner')}
+                      </div>
+                    </TableHead>
+                    <TableHead className="font-semibold w-[100px]">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  <AnimatePresence>
+                    {filteredAndSortedFindings.map((finding, index) => (
+                      <motion.tr
+                        key={finding.id}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, x: -10 }}
+                        transition={{ delay: index * 0.03, duration: 0.2 }}
+                        className={`border-b border-border/50 hover:bg-muted/30 transition-colors ${selectedIds.has(finding.id) ? 'bg-chart-3/5' : ''}`}
+                      >
+                        <TableCell>
+                          <Checkbox
+                            checked={selectedIds.has(finding.id)}
+                            onCheckedChange={() => toggleSelect(finding.id)}
+                            aria-label={`Select ${finding.findingtitle}`}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <div>
+                            <p className="font-medium">{finding.findingtitle}</p>
+                            {finding.recommendation && (
+                              <p className="text-sm text-muted-foreground truncate max-w-xs">
+                                {finding.recommendation}
+                              </p>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={getSeverityColor(finding.severityKey)}>
+                            {finding.severityKey ? FindingSeverityKeyToLabel[finding.severityKey] : 'Unset'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {finding.controlname?.controlname || (
+                            <span className="text-muted-foreground italic">None</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {finding.findingownername?.findingownername || (
+                            <span className="text-muted-foreground italic">Unassigned</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => openEditDialog(finding)}
+                              className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => setDeleteFinding(finding)}
+                              className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </motion.tr>
+                    ))}
+                  </AnimatePresence>
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+      </motion.div>
 
-          {/* Pagination hint */}
-          {data && (data.next || data.previous) && (
-            <div className="px-4 py-3 border-t border-gray-100 text-xs text-gray-500">
-              Showing {findings.length} of {data.count} findings
+      {/* Create/Edit Dialog */}
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="font-display">
+              {editingFinding ? 'Edit Finding' : 'Log New Finding'}
+            </DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="findingtitle">Finding Title *</Label>
+              <Input
+                id="findingtitle"
+                {...register('findingtitle', { required: 'Finding title is required' })}
+                placeholder="Enter finding title"
+              />
+              {errors.findingtitle && (
+                <p className="text-sm text-destructive">{errors.findingtitle.message}</p>
+              )}
             </div>
-          )}
-        </div>
-      </div>
+            <div className="space-y-2">
+              <Label htmlFor="severity">Severity</Label>
+              <Select
+                value={selectedSeverity || ''}
+                onValueChange={(value) => setValue('severityKey', value as FindingSeverityKey)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select severity" />
+                </SelectTrigger>
+                <SelectContent>
+                  {severityOptions.map((option) => (
+                    <SelectItem key={option.key} value={option.key}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="recommendation">Recommendation</Label>
+              <Textarea
+                id="recommendation"
+                {...register('recommendation')}
+                placeholder="Enter recommendation"
+                rows={3}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="control">Control</Label>
+                <Select
+                  value={selectedControlId || ''}
+                  onValueChange={(value) => setValue('controlId', value)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select control" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {controls.map((control) => (
+                      <SelectItem key={control.id} value={control.id}>
+                        {control.controlname}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="auditUser">Audit User</Label>
+                <Select
+                  value={selectedAuditUserId || ''}
+                  onValueChange={(value) => setValue('auditUserId', value)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select user" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {auditUsers.map((user) => (
+                      <SelectItem key={user.id} value={user.id}>
+                        {user.auditusername}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="findingOwner">Finding Owner</Label>
+              <Select
+                value={selectedFindingOwnerId || ''}
+                onValueChange={(value) => setValue('findingOwnerId', value)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select owner" />
+                </SelectTrigger>
+                <SelectContent>
+                  {findingOwners.map((owner) => (
+                    <SelectItem key={owner.id} value={owner.id}>
+                      {owner.findingownername}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={createMutation.isPending || updateMutation.isPending}>
+                {(createMutation.isPending || updateMutation.isPending) && <Spinner className="w-4 h-4 mr-2" />}
+                {editingFinding ? 'Update' : 'Create'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
-      {/* Modals */}
-      {modalOpen && (
-        <FindingModal editing={editingFinding} onClose={closeModal} />
-      )}
-      {deletingFinding && (
-        <DeleteConfirm finding={deletingFinding} onClose={() => setDeletingFinding(null)} />
-      )}
+      {/* Delete Confirmation */}
+      <AlertDialog open={!!deleteFinding} onOpenChange={(open) => !open && setDeleteFinding(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Finding</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{deleteFinding?.findingtitle}"? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleteMutation.isPending && <Spinner className="w-4 h-4 mr-2" />}
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Bulk Delete Confirmation */}
+      <AlertDialog open={showBulkDeleteDialog} onOpenChange={setShowBulkDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {selectedIds.size} Finding{selectedIds.size !== 1 ? 's' : ''}</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete {selectedIds.size} selected finding{selectedIds.size !== 1 ? 's' : ''}? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleBulkDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleteMutation.isPending && <Spinner className="w-4 h-4 mr-2" />}
+              Delete {selectedIds.size} Finding{selectedIds.size !== 1 ? 's' : ''}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
+
+import { motion } from 'motion/react';
+import { NavLink } from 'react-router-dom';
+import {
+  AlertTriangle,
+  Shield,
+  Search,
+  ClipboardCheck,
+  TrendingUp,
+  TrendingDown,
+  ArrowRight,
+  CheckCircle2,
+  Clock,
+  Bell,
+  Mail,
+} from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import {
+  useRiskList,
+  useControlList,
+  useFindingList,
+  useApprovalRequestList,
+  useRemediationActionList,
+} from '@/generated/hooks';
+import { getOverdueRemediations } from '@/hooks/use-email-notifications';
+import { FindingSeverityKeyToLabel, ApprovalRequestApprovalstatusKeyToLabel } from '@/generated/models';
+
+const containerVariants = {
+  hidden: { opacity: 0 },
+  show: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.1,
+    },
+  },
+};
+
+const itemVariants = {
+  hidden: { opacity: 0, y: 20 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] as const } },
+} as const;

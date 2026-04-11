@@ -1,281 +1,522 @@
-import { useState } from "react";
-import { CheckSquare, Plus, X, Search, ThumbsUp, ThumbsDown } from "lucide-react";
-import {
-  useApprovalList,
-  useCreateApproval,
-  useApprovalDecision,
-  useUserList,
-} from "@/generated/hooks";
-import {
-  APPROVAL_STATUS_LABELS,
-  APPROVAL_STATUS_COLORS,
-  type ApprovalStatus,
-  type ApprovalEntityType,
-} from "@/generated/models";
-import { cn, formatDateTime } from "@/lib/utils";
+import { useState } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import { ClipboardCheck, Plus, Pencil, Trash2, Search, CheckCircle, XCircle, Clock } from 'lucide-react';
+import { useForm } from 'react-hook-form';
+import { toast } from 'sonner';
+import { format } from 'date-fns';
 
-const ENTITY_LABELS: Record<ApprovalEntityType, string> = {
-  finding: "Finding", report: "Audit Report", engagement: "Engagement",
-};
+import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Spinner } from '@/components/ui/spinner';
+import { Empty } from '@/components/ui/empty';
 
-interface FormState {
-  entity_type: ApprovalEntityType | "";
-  entity_id: string;
-  entity_name: string;
-  approver: string;
-  request_notes: string;
+import {
+  useApprovalRequestList,
+  useCreateApprovalRequest,
+  useUpdateApprovalRequest,
+  useDeleteApprovalRequest,
+  useFindingList,
+  useAuditUserList,
+  useAuditManagerList,
+} from '@/generated/hooks';
+import type { ApprovalRequest, ApprovalRequestApprovalstatusKey } from '@/generated/models';
+import { ApprovalRequestApprovalstatusKeyToLabel } from '@/generated/models';
+
+interface ApprovalFormData {
+  requesttitle: string;
+  approvalstatusKey?: ApprovalRequestApprovalstatusKey;
+  requestdate?: string;
+  findingId?: string;
+  requestedById?: string;
+  approvedById?: string;
 }
-const EMPTY_FORM: FormState = {
-  entity_type: "", entity_id: "", entity_name: "", approver: "", request_notes: "",
-};
+
+const statusOptions: { key: ApprovalRequestApprovalstatusKey; label: string }[] = [
+  { key: 'ApprovalstatusKey0', label: 'Pending' },
+  { key: 'ApprovalstatusKey1', label: 'Approved' },
+  { key: 'ApprovalstatusKey2', label: 'Rejected' },
+];
+
+function getStatusColor(status?: ApprovalRequestApprovalstatusKey): string {
+  switch (status) {
+    case 'ApprovalstatusKey1':
+      return 'bg-accent/10 text-accent border-accent/30';
+    case 'ApprovalstatusKey2':
+      return 'bg-destructive/10 text-destructive border-destructive/30';
+    case 'ApprovalstatusKey0':
+    default:
+      return 'bg-chart-3/10 text-chart-3 border-chart-3/30';
+  }
+}
+
+function getStatusIcon(status?: ApprovalRequestApprovalstatusKey) {
+  switch (status) {
+    case 'ApprovalstatusKey1':
+      return <CheckCircle className="w-4 h-4" />;
+    case 'ApprovalstatusKey2':
+      return <XCircle className="w-4 h-4" />;
+    case 'ApprovalstatusKey0':
+    default:
+      return <Clock className="w-4 h-4" />;
+  }
+}
 
 export default function ApprovalsPage() {
-  const [filterStatus, setFilterStatus] = useState("");
-  const [filterType, setFilterType] = useState("");
-  const [search, setSearch] = useState("");
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [form, setForm] = useState<FormState>(EMPTY_FORM);
-  const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({});
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [editingApproval, setEditingApproval] = useState<ApprovalRequest | null>(null);
+  const [deleteApproval, setDeleteApproval] = useState<ApprovalRequest | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
 
-  const { data, isLoading } = useApprovalList({
-    status: filterStatus || undefined,
-    entity_type: filterType || undefined,
+  const { data: approvals = [], isLoading } = useApprovalRequestList();
+  const { data: findings = [] } = useFindingList();
+  const { data: auditUsers = [] } = useAuditUserList();
+  const { data: auditManagers = [] } = useAuditManagerList();
+  const createMutation = useCreateApprovalRequest();
+  const updateMutation = useUpdateApprovalRequest();
+  const deleteMutation = useDeleteApprovalRequest();
+
+  const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm<ApprovalFormData>();
+
+  const filteredApprovals = approvals.filter(approval => {
+    const matchesSearch = approval.requesttitle.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesStatus = statusFilter === 'all' || approval.approvalstatusKey === statusFilter;
+    return matchesSearch && matchesStatus;
   });
-  const { data: usersData } = useUserList();
-  const createMutation = useCreateApproval();
-  const decisionMutation = useApprovalDecision();
 
-  const approvals = data?.results ?? [];
-  const filtered = search
-    ? approvals.filter((a) =>
-        a.entity_name.toLowerCase().includes(search.toLowerCase()) ||
-        (a.requested_by_detail?.full_name ?? "").toLowerCase().includes(search.toLowerCase())
-      )
-    : approvals;
+  const pendingCount = approvals.filter(a => a.approvalstatusKey === 'ApprovalstatusKey0').length;
 
-  async function handleCreate(e: React.FormEvent) {
-    e.preventDefault();
-    await createMutation.mutateAsync(form as any);
-    setDialogOpen(false);
-    setForm(EMPTY_FORM);
-  }
-
-  async function decide(id: string, decision: "approved" | "rejected") {
-    await decisionMutation.mutateAsync({
-      id,
-      decision,
-      review_notes: reviewNotes[id] ?? "",
+  const openCreateDialog = () => {
+    setEditingApproval(null);
+    reset({
+      requesttitle: '',
+      approvalstatusKey: 'ApprovalstatusKey0',
+      requestdate: new Date().toISOString().split('T')[0],
+      findingId: '',
+      requestedById: '',
+      approvedById: '',
     });
-  }
+    setIsDialogOpen(true);
+  };
+
+  const openEditDialog = (approval: ApprovalRequest) => {
+    setEditingApproval(approval);
+    reset({
+      requesttitle: approval.requesttitle,
+      approvalstatusKey: approval.approvalstatusKey,
+      requestdate: approval.requestdate || '',
+      findingId: approval.findingtitle?.id || '',
+      requestedById: approval.requestedby?.id || '',
+      approvedById: approval.approvedby?.id || '',
+    });
+    setIsDialogOpen(true);
+  };
+
+  const onSubmit = async (data: ApprovalFormData) => {
+    try {
+      const finding = findings.find(f => f.id === data.findingId);
+      const requestedBy = auditUsers.find(u => u.id === data.requestedById);
+      const approvedBy = auditManagers.find(m => m.id === data.approvedById);
+
+      const payload = {
+        requesttitle: data.requesttitle,
+        approvalstatusKey: data.approvalstatusKey,
+        requestdate: data.requestdate,
+        findingtitle: finding ? { id: finding.id, findingtitle: finding.findingtitle } : undefined,
+        requestedby: requestedBy ? { id: requestedBy.id, auditusername: requestedBy.auditusername } : undefined,
+        approvedby: approvedBy ? { id: approvedBy.id, auditmanagername: approvedBy.auditmanagername } : undefined,
+      };
+
+      if (editingApproval) {
+        await updateMutation.mutateAsync({ id: editingApproval.id, changedFields: payload });
+        toast.success('Approval request updated successfully');
+      } else {
+        await createMutation.mutateAsync(payload);
+        toast.success('Approval request created successfully');
+      }
+      setIsDialogOpen(false);
+      reset();
+    } catch {
+      toast.error('An error occurred');
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteApproval) return;
+    try {
+      await deleteMutation.mutateAsync(deleteApproval.id);
+      toast.success('Approval request deleted successfully');
+      setDeleteApproval(null);
+    } catch {
+      toast.error('Failed to delete approval request');
+    }
+  };
+
+  const handleQuickStatusUpdate = async (approval: ApprovalRequest, newStatus: ApprovalRequestApprovalstatusKey) => {
+    try {
+      await updateMutation.mutateAsync({
+        id: approval.id,
+        changedFields: { approvalstatusKey: newStatus },
+      });
+      toast.success(`Request ${newStatus === 'ApprovalstatusKey1' ? 'approved' : 'rejected'}`);
+    } catch {
+      toast.error('Failed to update status');
+    }
+  };
+
+  const selectedStatus = watch('approvalstatusKey');
+  const selectedFindingId = watch('findingId');
+  const selectedRequestedById = watch('requestedById');
+  const selectedApprovedById = watch('approvedById');
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <CheckSquare className="h-6 w-6 text-primary" />
-          <h1 className="text-xl font-semibold">Approval Requests</h1>
-          {data && (
-            <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-              {data.count}
-            </span>
-          )}
-        </div>
-        <button
-          onClick={() => setDialogOpen(true)}
-          className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:opacity-90"
-        >
-          <Plus className="h-4 w-4" /> New Request
-        </button>
-      </div>
-
-      {/* Filters */}
-      <div className="flex flex-wrap gap-3">
-        <div className="relative flex-1 min-w-[180px]">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search…"
-            className="w-full rounded-lg border pl-9 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-          />
-        </div>
-        <select
-          value={filterStatus}
-          onChange={(e) => setFilterStatus(e.target.value)}
-          className="rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-        >
-          <option value="">All Statuses</option>
-          {Object.entries(APPROVAL_STATUS_LABELS).map(([k, v]) => (
-            <option key={k} value={k}>{v}</option>
-          ))}
-        </select>
-        <select
-          value={filterType}
-          onChange={(e) => setFilterType(e.target.value)}
-          className="rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-        >
-          <option value="">All Types</option>
-          {Object.entries(ENTITY_LABELS).map(([k, v]) => (
-            <option key={k} value={k}>{v}</option>
-          ))}
-        </select>
-      </div>
-
-      {/* Table */}
-      <div className="rounded-xl border bg-white overflow-hidden">
-        {isLoading ? (
-          <div className="p-8 text-center text-sm text-muted-foreground">Loading…</div>
-        ) : filtered.length === 0 ? (
-          <div className="p-8 text-center">
-            <CheckSquare className="mx-auto mb-2 h-10 w-10 text-muted-foreground/40" />
-            <p className="text-sm text-muted-foreground">No approval requests found.</p>
+    <div className="p-6 lg:p-8">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, ease: 'easeOut' as const }}
+        className="max-w-7xl mx-auto space-y-6"
+      >
+        {/* Header */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 bg-accent/10 rounded-xl flex items-center justify-center">
+              <ClipboardCheck className="w-6 h-6 text-accent" />
+            </div>
+            <div>
+              <h1 className="font-display text-2xl lg:text-3xl font-bold text-foreground">
+                Approval Requests
+              </h1>
+              <p className="text-muted-foreground text-sm">
+                {pendingCount} pending approval{pendingCount !== 1 ? 's' : ''}
+              </p>
+            </div>
           </div>
-        ) : (
-          <div className="divide-y">
-            {filtered.map((a) => (
-              <div key={a.id} className="px-6 py-4 hover:bg-muted/20 transition-colors">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-xs rounded bg-muted px-2 py-0.5 text-muted-foreground">
-                        {ENTITY_LABELS[a.entity_type]}
-                      </span>
-                      <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", APPROVAL_STATUS_COLORS[a.status])}>
-                        {APPROVAL_STATUS_LABELS[a.status]}
-                      </span>
-                    </div>
-                    <p className="mt-1 font-medium truncate">{a.entity_name || a.entity_id}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      Requested by {a.requested_by_detail?.full_name ?? "—"} · {formatDateTime(a.requested_at)}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Approver: {a.approver_detail?.full_name ?? "—"}
-                    </p>
-                    {a.request_notes && (
-                      <p className="mt-1 text-xs text-muted-foreground italic">&ldquo;{a.request_notes}&rdquo;</p>
-                    )}
-                  </div>
+          <Button onClick={openCreateDialog} className="gap-2">
+            <Plus className="w-4 h-4" />
+            New Request
+          </Button>
+        </div>
 
-                  {a.status === "pending" && (
-                    <div className="flex flex-col gap-2 min-w-[160px]">
-                      <input
-                        placeholder="Review notes (optional)"
-                        value={reviewNotes[a.id] ?? ""}
-                        onChange={(e) => setReviewNotes((p) => ({ ...p, [a.id]: e.target.value }))}
-                        className="rounded border px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary/20"
-                      />
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => decide(a.id, "approved")}
-                          disabled={decisionMutation.isPending}
-                          className="flex-1 flex items-center justify-center gap-1 rounded bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-60"
-                        >
-                          <ThumbsUp className="h-3 w-3" /> Approve
-                        </button>
-                        <button
-                          onClick={() => decide(a.id, "rejected")}
-                          disabled={decisionMutation.isPending}
-                          className="flex-1 flex items-center justify-center gap-1 rounded bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-60"
-                        >
-                          <ThumbsDown className="h-3 w-3" /> Reject
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-                {a.review_notes && a.status !== "pending" && (
-                  <p className="mt-2 text-xs text-muted-foreground border-t pt-2">
-                    Review notes: {a.review_notes}
-                  </p>
+        {/* Filters */}
+        <Card className="border-0 shadow-sm">
+          <CardContent className="p-4">
+            <div className="flex flex-col md:flex-row gap-4">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search requests..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-full md:w-48">
+                  <SelectValue placeholder="Filter by status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Statuses</SelectItem>
+                  {statusOptions.map((option) => (
+                    <SelectItem key={option.key} value={option.key}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Table */}
+        <Card className="border-0 shadow-sm overflow-hidden">
+          <CardContent className="p-0">
+            {isLoading ? (
+              <div className="flex items-center justify-center py-16">
+                <Spinner className="w-8 h-8" />
+              </div>
+            ) : filteredApprovals.length === 0 ? (
+              <div className="text-center py-16">
+                <ClipboardCheck className="w-12 h-12 text-muted-foreground/50 mx-auto mb-4" />
+                <p className="font-medium text-foreground">No approval requests found</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  {searchQuery || statusFilter !== 'all' ? 'Try adjusting your filters' : 'Get started by creating your first approval request'}
+                </p>
+                {!searchQuery && statusFilter === 'all' && (
+                  <Button onClick={openCreateDialog} className="gap-2 mt-4">
+                    <Plus className="w-4 h-4" />
+                    New Request
+                  </Button>
                 )}
               </div>
-            ))}
-          </div>
-        )}
-      </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-muted/50">
+                    <TableHead className="font-semibold">Request Title</TableHead>
+                    <TableHead className="font-semibold">Status</TableHead>
+                    <TableHead className="font-semibold">Finding</TableHead>
+                    <TableHead className="font-semibold">Requested By</TableHead>
+                    <TableHead className="font-semibold">Date</TableHead>
+                    <TableHead className="font-semibold w-[180px]">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  <AnimatePresence>
+                    {filteredApprovals.map((approval, index) => (
+                      <motion.tr
+                        key={approval.id}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, x: -10 }}
+                        transition={{ delay: index * 0.03, duration: 0.2 }}
+                        className="border-b border-border/50 hover:bg-muted/30 transition-colors"
+                      >
+                        <TableCell className="font-medium">{approval.requesttitle}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={`gap-1 ${getStatusColor(approval.approvalstatusKey)}`}>
+                            {getStatusIcon(approval.approvalstatusKey)}
+                            {approval.approvalstatusKey ? ApprovalRequestApprovalstatusKeyToLabel[approval.approvalstatusKey] : 'Unknown'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {approval.findingtitle?.findingtitle || (
+                            <span className="text-muted-foreground italic">None</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {approval.requestedby?.auditusername || (
+                            <span className="text-muted-foreground italic">Unknown</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {approval.requestdate ? format(new Date(approval.requestdate), 'MMM d, yyyy') : '—'}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            {approval.approvalstatusKey === 'ApprovalstatusKey0' && (
+                              <>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => handleQuickStatusUpdate(approval, 'ApprovalstatusKey1')}
+                                  className="h-8 w-8 text-accent hover:text-accent hover:bg-accent/10"
+                                  title="Approve"
+                                >
+                                  <CheckCircle className="w-4 h-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => handleQuickStatusUpdate(approval, 'ApprovalstatusKey2')}
+                                  className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                  title="Reject"
+                                >
+                                  <XCircle className="w-4 h-4" />
+                                </Button>
+                              </>
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => openEditDialog(approval)}
+                              className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => setDeleteApproval(approval)}
+                              className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </motion.tr>
+                    ))}
+                  </AnimatePresence>
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+      </motion.div>
 
-      {/* Create Dialog */}
-      {dialogOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-lg rounded-xl bg-white shadow-2xl">
-            <div className="flex items-center justify-between border-b px-6 py-4">
-              <h2 className="font-semibold">New Approval Request</h2>
-              <button onClick={() => setDialogOpen(false)} className="rounded p-1 hover:bg-muted">
-                <X className="h-4 w-4" />
-              </button>
+      {/* Create/Edit Dialog */}
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="font-display">
+              {editingApproval ? 'Edit Approval Request' : 'New Approval Request'}
+            </DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="requesttitle">Request Title *</Label>
+              <Input
+                id="requesttitle"
+                {...register('requesttitle', { required: 'Request title is required' })}
+                placeholder="Enter request title"
+              />
+              {errors.requesttitle && (
+                <p className="text-sm text-destructive">{errors.requesttitle.message}</p>
+              )}
             </div>
-            <form onSubmit={handleCreate} className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">Entity Type *</label>
-                <select
-                  required
-                  value={form.entity_type}
-                  onChange={(e) => setForm((p) => ({ ...p, entity_type: e.target.value as ApprovalEntityType }))}
-                  className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="status">Status</Label>
+                <Select
+                  value={selectedStatus || ''}
+                  onValueChange={(value) => setValue('approvalstatusKey', value as ApprovalRequestApprovalstatusKey)}
                 >
-                  <option value="">— Select —</option>
-                  {Object.entries(ENTITY_LABELS).map(([k, v]) => (
-                    <option key={k} value={k}>{v}</option>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {statusOptions.map((option) => (
+                      <SelectItem key={option.key} value={option.key}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="requestdate">Request Date</Label>
+                <Input
+                  id="requestdate"
+                  type="date"
+                  {...register('requestdate')}
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="finding">Related Finding</Label>
+              <Select
+                value={selectedFindingId || ''}
+                onValueChange={(value) => setValue('findingId', value)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select finding" />
+                </SelectTrigger>
+                <SelectContent>
+                  {findings.map((finding) => (
+                    <SelectItem key={finding.id} value={finding.id}>
+                      {finding.findingtitle}
+                    </SelectItem>
                   ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Entity ID (UUID) *</label>
-                <input
-                  required
-                  value={form.entity_id}
-                  onChange={(e) => setForm((p) => ({ ...p, entity_id: e.target.value }))}
-                  placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                  className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Entity Name</label>
-                <input
-                  value={form.entity_name}
-                  onChange={(e) => setForm((p) => ({ ...p, entity_name: e.target.value }))}
-                  className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Approver *</label>
-                <select
-                  required
-                  value={form.approver}
-                  onChange={(e) => setForm((p) => ({ ...p, approver: e.target.value }))}
-                  className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="requestedBy">Requested By</Label>
+                <Select
+                  value={selectedRequestedById || ''}
+                  onValueChange={(value) => setValue('requestedById', value)}
                 >
-                  <option value="">— Select —</option>
-                  {usersData?.map((u) => (
-                    <option key={u.id} value={u.id}>{u.full_name || u.email}</option>
-                  ))}
-                </select>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select user" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {auditUsers.map((user) => (
+                      <SelectItem key={user.id} value={user.id}>
+                        {user.auditusername}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Request Notes</label>
-                <textarea
-                  rows={3}
-                  value={form.request_notes}
-                  onChange={(e) => setForm((p) => ({ ...p, request_notes: e.target.value }))}
-                  className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-                />
-              </div>
-              <div className="flex justify-end gap-3 pt-2">
-                <button type="button" onClick={() => setDialogOpen(false)} className="rounded-lg border px-4 py-2 text-sm hover:bg-muted">
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={createMutation.isPending}
-                  className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60"
+              <div className="space-y-2">
+                <Label htmlFor="approvedBy">Approved By</Label>
+                <Select
+                  value={selectedApprovedById || ''}
+                  onValueChange={(value) => setValue('approvedById', value)}
                 >
-                  Submit Request
-                </button>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select manager" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {auditManagers.map((manager) => (
+                      <SelectItem key={manager.id} value={manager.id}>
+                        {manager.auditmanagername}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-            </form>
-          </div>
-        </div>
-      )}
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={createMutation.isPending || updateMutation.isPending}>
+                {(createMutation.isPending || updateMutation.isPending) && <Spinner className="w-4 h-4 mr-2" />}
+                {editingApproval ? 'Update' : 'Create'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation */}
+      <AlertDialog open={!!deleteApproval} onOpenChange={(open) => !open && setDeleteApproval(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Approval Request</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{deleteApproval?.requesttitle}"? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleteMutation.isPending && <Spinner className="w-4 h-4 mr-2" />}
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

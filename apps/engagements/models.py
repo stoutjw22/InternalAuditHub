@@ -96,6 +96,11 @@ class EngagementAuditor(models.Model):
         on_delete=models.CASCADE,
         related_name="audit_assignments",
     )
+    role_key = models.CharField(
+        max_length=20,
+        default="RoleKey1",
+        help_text="'RoleKey0' = Lead Auditor, 'RoleKey1' = Team Member.",
+    )
     role_note = models.CharField(
         max_length=200,
         blank=True,

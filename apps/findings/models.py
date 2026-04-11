@@ -172,6 +172,13 @@ class RemediationAction(models.Model):
     )
     completion_notes = models.TextField(blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
+    evidence = models.ForeignKey(
+        "Evidence",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="remediation_actions",
+    )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,

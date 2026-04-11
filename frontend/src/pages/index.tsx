@@ -1,299 +1,264 @@
-import { useState } from "react";
-import { Link } from "react-router-dom";
-import {
-  AlertTriangle,
-  CheckCircle,
-  Clock,
-  TrendingUp,
-  XCircle,
-} from "lucide-react";
-import {
-  useEngagementList,
-  useFindingList,
-  useApprovalList,
-  useApprovalDecision,
-  useRemediationList,
-} from "@/generated/hooks";
-import {
-  FINDING_SEVERITY_COLORS,
-  FINDING_STATUS_LABELS,
-  APPROVAL_STATUS_COLORS,
-} from "@/generated/models";
-import { cn, formatDate } from "@/lib/utils";
-
-function StatCard({
-  label,
-  value,
-  icon,
-  color,
-  loading,
-}: {
-  label: string;
-  value: number | string;
-  icon: React.ReactNode;
-  color: string;
-  loading?: boolean;
-}) {
-  return (
-    <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-sm font-medium text-gray-500">{label}</p>
-          {loading ? (
-            <div className="mt-1 h-8 w-16 animate-pulse rounded bg-gray-200" />
-          ) : (
-            <p className="mt-1 text-3xl font-bold text-gray-900">{value}</p>
-          )}
-        </div>
-        <div className={cn("flex h-12 w-12 items-center justify-center rounded-xl", color)}>
-          {icon}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export default function HomePage() {
-  const [approvingId, setApprovingId] = useState<string | null>(null);
+  const { data: risks = [] } = useRiskList();
+  const { data: controls = [] } = useControlList();
+  const { data: remediations = [] } = useRemediationActionList();
+  const { data: findings = [] } = useFindingList();
+  const { data: approvals = [] } = useApprovalRequestList();
+  const overdueRemediations = getOverdueRemediations(remediations);
 
-  const { data: activeEngagements, isLoading: engLoading } = useEngagementList({
-    status: "in_progress",
-  });
-  const { data: highFindings, isLoading: findingsLoading } = useFindingList({
-    severity: "high",
-  });
-  const { data: pendingApprovals, isLoading: approvalsLoading } = useApprovalList({
-    status: "pending",
-  });
-  const { data: overdueRemediations, isLoading: overdueLoading } = useRemediationList({
-    status: "overdue",
-  });
-  const { data: recentEngagements, isLoading: recentEngLoading } = useEngagementList({});
+  const pendingApprovals = approvals.filter(a => a.approvalstatusKey === 'ApprovalstatusKey0');
+  const highSeverityFindings = findings.filter(f => f.severityKey === 'SeverityKey2');
 
-  const approvalDecision = useApprovalDecision();
-
-  async function handleDecision(id: string, decision: "approved" | "rejected") {
-    setApprovingId(id);
-    try {
-      await approvalDecision.mutateAsync({ id, decision });
-    } finally {
-      setApprovingId(null);
-    }
-  }
+  const stats = [
+    {
+      label: 'Total Risks',
+      value: risks.length,
+      icon: AlertTriangle,
+      color: 'bg-chart-4/10 text-chart-4',
+      trend: '+12%',
+      trendUp: true,
+    },
+    {
+      label: 'Active Controls',
+      value: controls.length,
+      icon: Shield,
+      color: 'bg-primary/10 text-primary',
+      trend: '+5%',
+      trendUp: true,
+    },
+    {
+      label: 'Open Findings',
+      value: findings.length,
+      icon: Search,
+      color: 'bg-chart-3/10 text-chart-3',
+      trend: '-8%',
+      trendUp: false,
+    },
+    {
+      label: 'Pending Approvals',
+      value: pendingApprovals.length,
+      icon: ClipboardCheck,
+      color: 'bg-accent/10 text-accent',
+      trend: null,
+      trendUp: null,
+    },
+  ];
 
   return (
-    <div className="space-y-8 p-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-        <p className="mt-1 text-sm text-gray-500">
-          Overview of your internal audit programme
-        </p>
-      </div>
-
-      {/* Stat Cards */}
-      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard
-          label="Active Engagements"
-          value={activeEngagements?.count ?? 0}
-          loading={engLoading}
-          icon={<TrendingUp className="h-6 w-6 text-blue-600" />}
-          color="bg-blue-100"
-        />
-        <StatCard
-          label="Open Findings"
-          value={highFindings?.count ?? 0}
-          loading={findingsLoading}
-          icon={<AlertTriangle className="h-6 w-6 text-orange-600" />}
-          color="bg-orange-100"
-        />
-        <StatCard
-          label="Pending Approvals"
-          value={pendingApprovals?.count ?? 0}
-          loading={approvalsLoading}
-          icon={<Clock className="h-6 w-6 text-yellow-600" />}
-          color="bg-yellow-100"
-        />
-        <StatCard
-          label="Overdue Remediations"
-          value={overdueRemediations?.count ?? 0}
-          loading={overdueLoading}
-          icon={<XCircle className="h-6 w-6 text-red-600" />}
-          color="bg-red-100"
-        />
-      </div>
-
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        {/* Recent High-Severity Findings */}
-        <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
-          <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
-            <h2 className="font-semibold text-gray-900">High-Severity Findings</h2>
-            <Link
-              to="/findings"
-              className="text-sm font-medium text-primary hover:underline"
-            >
-              View all
-            </Link>
+    <div className="p-6 lg:p-8">
+      <motion.div
+        variants={containerVariants}
+        initial="hidden"
+        animate="show"
+        className="max-w-7xl mx-auto space-y-8"
+      >
+        {/* Header */}
+        <motion.div variants={itemVariants} className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+          <div>
+            <h1 className="font-display text-3xl lg:text-4xl font-bold text-foreground mb-2">
+              Audit Dashboard
+            </h1>
+            <p className="text-muted-foreground">
+              Monitor risks, controls, findings, and approval workflows
+            </p>
           </div>
-          {findingsLoading ? (
-            <div className="flex items-center justify-center py-12">
-              <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-            </div>
-          ) : !highFindings?.results.length ? (
-            <div className="flex flex-col items-center justify-center py-12 text-gray-400">
-              <CheckCircle className="mb-2 h-8 w-8" />
-              <p className="text-sm">No high-severity findings</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-gray-100 bg-gray-50 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
-                    <th className="px-6 py-3">Title</th>
-                    <th className="px-6 py-3">Severity</th>
-                    <th className="px-6 py-3">Status</th>
-                    <th className="px-6 py-3">Due Date</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {highFindings.results.slice(0, 8).map((finding) => (
-                    <tr key={finding.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-3">
-                        <Link
-                          to={`/findings/${finding.id}`}
-                          className="font-medium text-gray-900 hover:text-primary"
-                        >
-                          {finding.title}
-                        </Link>
-                      </td>
-                      <td className="px-6 py-3">
-                        <span
-                          className={cn(
-                            "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
-                            FINDING_SEVERITY_COLORS[finding.severity]
-                          )}
-                        >
-                          {finding.severity_display}
-                        </span>
-                      </td>
-                      <td className="px-6 py-3 text-gray-600">
-                        {FINDING_STATUS_LABELS[finding.status]}
-                      </td>
-                      <td className="px-6 py-3 text-gray-500">
-                        {formatDate(finding.due_date)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
 
-        {/* Pending Approvals */}
-        <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
-          <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
-            <h2 className="font-semibold text-gray-900">Pending Approvals</h2>
-            <Link
-              to="/approvals"
-              className="text-sm font-medium text-primary hover:underline"
-            >
-              View all
-            </Link>
-          </div>
-          {approvalsLoading ? (
-            <div className="flex items-center justify-center py-12">
-              <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-            </div>
-          ) : !pendingApprovals?.results.length ? (
-            <div className="flex flex-col items-center justify-center py-12 text-gray-400">
-              <CheckCircle className="mb-2 h-8 w-8" />
-              <p className="text-sm">No pending approvals</p>
-            </div>
-          ) : (
-            <ul className="divide-y divide-gray-100">
-              {pendingApprovals.results.slice(0, 6).map((approval) => (
-                <li key={approval.id} className="flex items-center justify-between px-6 py-4">
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-gray-900">
-                      {approval.entity_name}
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      {approval.entity_type} &middot; Requested{" "}
-                      {formatDate(approval.requested_at)}
-                    </p>
-                    <span
-                      className={cn(
-                        "mt-1 inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
-                        APPROVAL_STATUS_COLORS[approval.status]
-                      )}
-                    >
-                      {approval.status_display}
-                    </span>
+        {/* Overdue Remediations Alert */}
+        {overdueRemediations.length > 0 && (
+          <motion.div variants={itemVariants}>
+            <Card className="border-0 shadow-sm border-l-4 border-l-destructive bg-destructive/5">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="p-3 rounded-xl bg-destructive/10">
+                      <Bell className="w-5 h-5 text-destructive" />
+                    </div>
+                    <div>
+                      <h3 className="font-medium text-foreground">Overdue Remediation Actions</h3>
+                      <p className="text-sm text-muted-foreground">
+                        {overdueRemediations.length} action{overdueRemediations.length !== 1 ? 's' : ''} require attention
+                      </p>
+                    </div>
                   </div>
-                  <div className="ml-4 flex shrink-0 gap-2">
-                    <button
-                      onClick={() => handleDecision(approval.id, "approved")}
-                      disabled={approvingId === approval.id}
-                      className="rounded-lg bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-700 disabled:opacity-50"
-                    >
-                      Approve
-                    </button>
-                    <button
-                      onClick={() => handleDecision(approval.id, "rejected")}
-                      disabled={approvingId === approval.id}
-                      className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
-                    >
-                      Reject
-                    </button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </div>
-
-      {/* Recent Engagements */}
-      <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
-        <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
-          <h2 className="font-semibold text-gray-900">Recent Engagements</h2>
-          <Link
-            to="/engagements"
-            className="text-sm font-medium text-primary hover:underline"
-          >
-            View all
-          </Link>
-        </div>
-        {recentEngLoading ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-          </div>
-        ) : !recentEngagements?.results.length ? (
-          <div className="flex flex-col items-center justify-center py-12 text-gray-400">
-            <p className="text-sm">No engagements found</p>
-          </div>
-        ) : (
-          <ul className="divide-y divide-gray-100">
-            {recentEngagements.results.slice(0, 5).map((eng) => (
-              <li key={eng.id} className="flex items-center justify-between px-6 py-4">
-                <div>
-                  <Link
-                    to={`/engagements/${eng.id}`}
-                    className="text-sm font-medium text-gray-900 hover:text-primary"
-                  >
-                    {eng.name}
-                  </Link>
-                  <p className="text-xs text-gray-500">
-                    Manager: {eng.audit_manager_name} &middot; {formatDate(eng.start_date)} –{" "}
-                    {formatDate(eng.end_date)}
-                  </p>
+                  <NavLink to="/notifications">
+                    <Button variant="outline" className="gap-2 border-destructive/30 hover:bg-destructive/10">
+                      <Mail className="w-4 h-4" />
+                      Send Notifications
+                      <ArrowRight className="w-4 h-4" />
+                    </Button>
+                  </NavLink>
                 </div>
-                <span className="ml-4 text-xs text-gray-500">{eng.status_display}</span>
-              </li>
-            ))}
-          </ul>
+              </CardContent>
+            </Card>
+          </motion.div>
         )}
-      </div>
+          <div className="flex gap-3">
+            <NavLink to="/findings">
+              <Button variant="outline" className="gap-2">
+                <Search className="w-4 h-4" />
+                New Finding
+              </Button>
+            </NavLink>
+            <NavLink to="/risks">
+              <Button className="gap-2">
+                <AlertTriangle className="w-4 h-4" />
+                Add Risk
+              </Button>
+            </NavLink>
+          </div>
+        </motion.div>
+
+        {/* Stats Grid */}
+        <motion.div variants={itemVariants} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {stats.map((stat, index) => (
+            <motion.div
+              key={stat.label}
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: 0.1 + index * 0.05, duration: 0.3 }}
+            >
+              <Card className="relative overflow-hidden border-0 shadow-sm hover:shadow-md transition-shadow">
+                <CardContent className="p-6">
+                  <div className="flex items-start justify-between">
+                    <div className={`p-3 rounded-xl ${stat.color}`}>
+                      <stat.icon className="w-5 h-5" />
+                    </div>
+                    {stat.trend && (
+                      <div className={`flex items-center gap-1 text-sm font-medium ${
+                        stat.trendUp ? 'text-accent' : 'text-destructive'
+                      }`}>
+                        {stat.trendUp ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
+                        {stat.trend}
+                      </div>
+                    )}
+                  </div>
+                  <div className="mt-4">
+                    <p className="text-3xl font-bold text-foreground">{stat.value}</p>
+                    <p className="text-sm text-muted-foreground mt-1">{stat.label}</p>
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+          ))}
+        </motion.div>
+
+        {/* Content Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* High Severity Findings */}
+          <motion.div variants={itemVariants}>
+            <Card className="h-full border-0 shadow-sm">
+              <CardHeader className="flex flex-row items-center justify-between pb-4">
+                <CardTitle className="font-display text-lg flex items-center gap-2">
+                  <div className="w-2 h-2 bg-destructive rounded-full animate-pulse" />
+                  High Severity Findings
+                </CardTitle>
+                <NavLink to="/findings">
+                  <Button variant="ghost" size="sm" className="gap-1 text-muted-foreground hover:text-foreground">
+                    View all
+                    <ArrowRight className="w-4 h-4" />
+                  </Button>
+                </NavLink>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {highSeverityFindings.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <CheckCircle2 className="w-10 h-10 mx-auto mb-3 text-accent" />
+                    <p>No high severity findings</p>
+                  </div>
+                ) : (
+                  highSeverityFindings.slice(0, 5).map((finding) => (
+                    <div
+                      key={finding.id}
+                      className="flex items-center justify-between p-4 bg-muted/50 rounded-lg hover:bg-muted transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-2 h-2 bg-destructive rounded-full" />
+                        <div>
+                          <p className="font-medium text-foreground">{finding.findingtitle}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {finding.controlname?.controlname || 'No control assigned'}
+                          </p>
+                        </div>
+                      </div>
+                      <Badge variant="destructive" className="uppercase text-xs">
+                        {finding.severityKey ? FindingSeverityKeyToLabel[finding.severityKey] : 'Unknown'}
+                      </Badge>
+                    </div>
+                  ))
+                )}
+              </CardContent>
+            </Card>
+          </motion.div>
+
+          {/* Pending Approvals */}
+          <motion.div variants={itemVariants}>
+            <Card className="h-full border-0 shadow-sm">
+              <CardHeader className="flex flex-row items-center justify-between pb-4">
+                <CardTitle className="font-display text-lg flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-chart-3" />
+                  Pending Approvals
+                </CardTitle>
+                <NavLink to="/approvals">
+                  <Button variant="ghost" size="sm" className="gap-1 text-muted-foreground hover:text-foreground">
+                    View all
+                    <ArrowRight className="w-4 h-4" />
+                  </Button>
+                </NavLink>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {pendingApprovals.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <CheckCircle2 className="w-10 h-10 mx-auto mb-3 text-accent" />
+                    <p>No pending approvals</p>
+                  </div>
+                ) : (
+                  pendingApprovals.slice(0, 5).map((approval) => (
+                    <div
+                      key={approval.id}
+                      className="flex items-center justify-between p-4 bg-muted/50 rounded-lg hover:bg-muted transition-colors"
+                    >
+                      <div>
+                        <p className="font-medium text-foreground">{approval.requesttitle}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {approval.requestedby?.auditusername || 'Unknown requester'}
+                          {approval.requestdate && ` • ${new Date(approval.requestdate).toLocaleDateString()}`}
+                        </p>
+                      </div>
+                      <Badge variant="secondary" className="uppercase text-xs bg-chart-3/10 text-chart-3">
+                        {approval.approvalstatusKey ? ApprovalRequestApprovalstatusKeyToLabel[approval.approvalstatusKey] : 'Unknown'}
+                      </Badge>
+                    </div>
+                  ))
+                )}
+              </CardContent>
+            </Card>
+          </motion.div>
+        </div>
+
+        {/* Quick Actions */}
+        <motion.div variants={itemVariants}>
+          <Card className="border-0 shadow-sm bg-gradient-to-br from-primary/5 via-background to-accent/5">
+            <CardContent className="p-6">
+              <h3 className="font-display text-lg font-semibold text-foreground mb-4">Quick Actions</h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {[
+                  { label: 'Add Risk', icon: AlertTriangle, path: '/risks', color: 'text-chart-4' },
+                  { label: 'Add Control', icon: Shield, path: '/controls', color: 'text-primary' },
+                  { label: 'Log Finding', icon: Search, path: '/findings', color: 'text-chart-3' },
+                  { label: 'Review Approvals', icon: ClipboardCheck, path: '/approvals', color: 'text-accent' },
+                ].map((action) => (
+                  <NavLink key={action.path} to={action.path}>
+                    <div className="p-4 bg-card rounded-xl border border-border/50 hover:border-primary/30 hover:shadow-md transition-all cursor-pointer group">
+                      <action.icon className={`w-6 h-6 ${action.color} mb-3 group-hover:scale-110 transition-transform`} />
+                      <p className="font-medium text-foreground">{action.label}</p>
+                    </div>
+                  </NavLink>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+      </motion.div>
     </div>
   );
 }

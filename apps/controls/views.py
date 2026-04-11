@@ -63,3 +63,28 @@ class EngagementControlDetailView(generics.RetrieveUpdateDestroyAPIView):
         return EngagementControl.objects.filter(
             engagement_id=self.kwargs["engagement_pk"]
         ).select_related("control", "tested_by")
+
+
+class EngagementControlFlatListCreateView(generics.ListCreateAPIView):
+    """Flat list of ALL engagement controls across all engagements."""
+
+    serializer_class = EngagementControlSerializer
+    permission_classes = [IsAuditorOrAbove]
+
+    def get_queryset(self):
+        return EngagementControl.objects.select_related(
+            "control", "control__owner", "engagement_risk", "engagement", "created_by"
+        ).prefetch_related("control__risks")
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+
+
+class EngagementControlFlatDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """Flat detail/delete for a single engagement control."""
+
+    serializer_class = EngagementControlSerializer
+    permission_classes = [IsAuditorOrAbove]
+    queryset = EngagementControl.objects.select_related(
+        "control", "control__owner", "engagement_risk", "engagement"
+    ).prefetch_related("control__risks")

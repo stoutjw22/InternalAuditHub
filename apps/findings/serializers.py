@@ -16,17 +16,30 @@ MAX_EVIDENCE_MB = 25
 class RemediationActionSerializer(serializers.ModelSerializer):
     owner_detail = UserListSerializer(source="owner", read_only=True)
     status_display = serializers.CharField(source="get_status_display", read_only=True)
+    finding_title = serializers.SerializerMethodField()
+    evidence_name = serializers.SerializerMethodField()
+    evidence_id = serializers.SerializerMethodField()
 
     class Meta:
         model = RemediationAction
         fields = (
-            "id", "finding", "description",
+            "id", "finding", "finding_title", "description",
             "owner", "owner_detail",
             "due_date", "status", "status_display",
             "completion_notes", "completed_at",
+            "evidence", "evidence_name", "evidence_id",
             "created_by", "created_at", "updated_at",
         )
         read_only_fields = ("id", "created_by", "created_at", "updated_at")
+
+    def get_finding_title(self, obj) -> str:
+        return obj.finding.title if obj.finding_id else ""
+
+    def get_evidence_name(self, obj) -> str:
+        return obj.evidence.title if obj.evidence_id else ""
+
+    def get_evidence_id(self, obj) -> str:
+        return str(obj.evidence.id) if obj.evidence_id else ""
 
     def create(self, validated_data):
         validated_data["created_by"] = self.context["request"].user

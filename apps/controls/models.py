@@ -123,6 +123,18 @@ class EngagementControl(models.Model):
         on_delete=models.CASCADE,
         related_name="engagement_controls",
     )
+    engagement_risk = models.ForeignKey(
+        "risks.EngagementRisk",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="engagement_controls",
+    )
+    display_name = models.CharField(
+        max_length=300,
+        blank=True,
+        help_text="Display label, e.g. 'Control Name – Risk Name'.",
+    )
     test_procedure = models.TextField(blank=True, help_text="Steps taken to test this control.")
     test_result = models.CharField(
         max_length=20, choices=TestResult.choices, default=TestResult.NOT_TESTED

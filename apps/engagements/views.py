@@ -81,6 +81,27 @@ class EngagementAuditorDetailView(generics.DestroyAPIView):
         )
 
 
+class EngagementAuditorFlatListCreateView(generics.ListCreateAPIView):
+    """Flat list of ALL engagement auditors across all engagements."""
+
+    serializer_class = EngagementAuditorSerializer
+    permission_classes = [IsAuditorOrAbove]
+
+    def get_queryset(self):
+        return EngagementAuditor.objects.select_related("auditor", "engagement")
+
+    def perform_create(self, serializer):
+        serializer.save(assigned_by=self.request.user)
+
+
+class EngagementAuditorFlatDetailView(generics.DestroyAPIView):
+    """Flat delete for a single engagement auditor."""
+
+    serializer_class = EngagementAuditorSerializer
+    permission_classes = [IsAuditManagerOrAbove]
+    queryset = EngagementAuditor.objects.select_related("auditor", "engagement")
+
+
 class AuditTaskListCreateView(generics.ListCreateAPIView):
     serializer_class = AuditTaskSerializer
     filterset_fields = ["status", "priority", "assigned_to"]

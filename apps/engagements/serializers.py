@@ -10,7 +10,7 @@ class EngagementAuditorSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = EngagementAuditor
-        fields = ("id", "auditor", "auditor_detail", "role_note", "assigned_at")
+        fields = ("id", "engagement", "auditor", "auditor_detail", "role_key", "role_note", "assigned_at")
         read_only_fields = ("id", "assigned_at")
 
 

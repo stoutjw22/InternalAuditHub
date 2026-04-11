@@ -1,417 +1,756 @@
-import { useState } from "react";
-import { Plus, Pencil, CheckSquare, Trash2, X } from "lucide-react";
+import { useState, useMemo } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import {
-  useReportList,
-  useCreateReport,
-  useUpdateReport,
-  useFinalizeReport,
-  useDeleteReport,
-  useEngagementList,
-  useReportTemplateList,
-} from "@/generated/hooks";
+  FileText,
+  Plus,
+  Eye,
+  Trash2,
+  ExternalLink,
+  Calendar,
+  User,
+  Search,
+  MoreHorizontal,
+  Briefcase,
+  CheckCircle2,
+  Clock,
+  AlertCircle,
+  Loader2,
+  FileCheck,
+  Target,
+  AlertTriangle,
+  ShieldCheck,
+  RefreshCw,
+} from 'lucide-react';
+import { useForm } from 'react-hook-form';
+import { toast } from 'sonner';
+
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
 import {
-  REPORT_STATUS_LABELS,
-  REPORT_STATUS_COLORS,
-  type ReportStatus,
-  type AuditReport,
-  type AuditReportList,
-} from "@/generated/models";
-import { cn, formatDate, formatDateTime } from "@/lib/utils";
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription,
+} from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Spinner } from '@/components/ui/spinner';
+import { Separator } from '@/components/ui/separator';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
-type StatusFilter = "" | ReportStatus;
+import {
+  useAuditReportList,
+  useCreateAuditReport,
+  useUpdateAuditReport,
+  useDeleteAuditReport,
+  useAuditReportTemplateList,
+  useAuditEngagementList,
+  useAuditUserList,
+  useBusinessObjectiveList,
+  useEngagementRiskList,
+  useEngagementControlList,
+  useFindingList,
+} from '@/generated/hooks';
+import type { AuditReport, AuditReportStatusKey } from '@/generated/models';
+import { AuditReportStatusKeyToLabel } from '@/generated/models';
 
-interface ReportFormState {
-  title: string;
-  engagement: string;
-  template: string;
-  executive_summary: string;
-  content: string;
-  distribution_list: string;
+interface GenerateReportFormData {
+  engagementId: string;
+  templateId: string;
 }
 
-const EMPTY_FORM: ReportFormState = {
-  title: "",
-  engagement: "",
-  template: "",
-  executive_summary: "",
-  content: "",
-  distribution_list: "",
-};
-
-function ReportFormDialog({
-  initialData,
-  editingId,
-  onClose,
-}: {
-  initialData?: Partial<ReportFormState>;
-  editingId?: string;
-  onClose: () => void;
-}) {
-  const [form, setForm] = useState<ReportFormState>({
-    ...EMPTY_FORM,
-    ...initialData,
-  });
-  const [error, setError] = useState("");
-
-  const { data: engagements } = useEngagementList({});
-  const { data: templates } = useReportTemplateList({ is_active: true });
-  const createReport = useCreateReport();
-  const updateReport = useUpdateReport();
-
-  const isEditing = !!editingId;
-
-  function set(field: keyof ReportFormState, value: string) {
-    setForm((f) => ({ ...f, [field]: value }));
+function getStatusIcon(status?: AuditReportStatusKey) {
+  switch (status) {
+    case 'StatusKey0': return Clock;
+    case 'StatusKey1': return Loader2;
+    case 'StatusKey2': return CheckCircle2;
+    case 'StatusKey3': return AlertCircle;
+    default: return Clock;
   }
+}
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError("");
-    if (!form.title.trim()) {
-      setError("Title is required.");
-      return;
-    }
-    try {
-      const payload: Partial<AuditReport> = {
-        title: form.title,
-        engagement: form.engagement || undefined,
-        template: form.template || null,
-        executive_summary: form.executive_summary,
-        content: form.content,
-        distribution_list: form.distribution_list,
-      };
-      if (isEditing) {
-        await updateReport.mutateAsync({ id: editingId, ...payload });
-      } else {
-        await createReport.mutateAsync(payload);
-      }
-      onClose();
-    } catch {
-      setError("Failed to save report. Please try again.");
-    }
+function getStatusColor(status?: AuditReportStatusKey): string {
+  switch (status) {
+    case 'StatusKey0': return 'bg-muted text-muted-foreground';
+    case 'StatusKey1': return 'bg-chart-1/10 text-chart-1 border-chart-1/30';
+    case 'StatusKey2': return 'bg-accent/10 text-accent border-accent/30';
+    case 'StatusKey3': return 'bg-destructive/10 text-destructive border-destructive/30';
+    default: return 'bg-muted text-muted-foreground';
   }
-
-  const isPending = createReport.isPending || updateReport.isPending;
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-2xl rounded-xl bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
-          <h2 className="text-lg font-semibold text-gray-900">
-            {isEditing ? "Edit Report" : "New Report"}
-          </h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-        <form onSubmit={handleSubmit} className="space-y-4 p-6">
-          {error && (
-            <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
-          )}
-
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-gray-700">
-              Title <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              value={form.title}
-              onChange={(e) => set("title", e.target.value)}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-              placeholder="Q1 2026 IT Audit Report"
-              required
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-gray-700">Engagement</label>
-              <select
-                value={form.engagement}
-                onChange={(e) => set("engagement", e.target.value)}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-              >
-                <option value="">— Select engagement —</option>
-                {engagements?.results.map((eng) => (
-                  <option key={eng.id} value={eng.id}>
-                    {eng.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-gray-700">Template</label>
-              <select
-                value={form.template}
-                onChange={(e) => set("template", e.target.value)}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-              >
-                <option value="">— No template —</option>
-                {(templates ?? []).map((tpl) => (
-                  <option key={tpl.id} value={tpl.id}>
-                    {tpl.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-gray-700">
-              Executive Summary
-            </label>
-            <textarea
-              rows={3}
-              value={form.executive_summary}
-              onChange={(e) => set("executive_summary", e.target.value)}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-              placeholder="High-level summary for executives..."
-            />
-          </div>
-
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-gray-700">Content</label>
-            <textarea
-              rows={5}
-              value={form.content}
-              onChange={(e) => set("content", e.target.value)}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-              placeholder="Full report content..."
-            />
-          </div>
-
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-gray-700">
-              Distribution List
-            </label>
-            <input
-              type="text"
-              value={form.distribution_list}
-              onChange={(e) => set("distribution_list", e.target.value)}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-              placeholder="cfo@company.com, ceo@company.com"
-            />
-          </div>
-
-          <div className="flex justify-end gap-3 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isPending}
-              className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60"
-            >
-              {isPending ? "Saving…" : isEditing ? "Update Report" : "Create Report"}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
 }
 
 export default function ReportsPage() {
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("");
-  const [showCreate, setShowCreate] = useState(false);
-  const [editingReport, setEditingReport] = useState<AuditReportList | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [isGenerateDialogOpen, setIsGenerateDialogOpen] = useState(false);
+  const [viewingReport, setViewingReport] = useState<AuditReport | null>(null);
+  const [deleteReport, setDeleteReport] = useState<AuditReport | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
 
-  const params: Record<string, unknown> = {};
-  if (statusFilter) params.status = statusFilter;
+  const { data: reports = [], isLoading } = useAuditReportList();
+  const { data: templates = [] } = useAuditReportTemplateList();
+  const { data: engagements = [] } = useAuditEngagementList();
+  const { data: auditUsers = [] } = useAuditUserList();
+  const { data: allObjectives = [] } = useBusinessObjectiveList();
+  const { data: allEngagementRisks = [] } = useEngagementRiskList();
+  const { data: allEngagementControls = [] } = useEngagementControlList();
+  const { data: allFindings = [] } = useFindingList();
 
-  const { data: reports, isLoading } = useReportList(params);
-  const finalizeReport = useFinalizeReport();
-  const deleteReport = useDeleteReport();
+  const createMutation = useCreateAuditReport();
+  const updateMutation = useUpdateAuditReport();
+  const deleteMutation = useDeleteAuditReport();
 
-  async function handleFinalize(id: string) {
-    if (!confirm("Finalize this report? This action cannot be undone.")) return;
-    await finalizeReport.mutateAsync(id);
-  }
+  const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm<GenerateReportFormData>();
 
-  async function handleDelete(id: string) {
-    await deleteReport.mutateAsync(id);
-    setConfirmDelete(null);
-  }
+  const selectedEngagementId = watch('engagementId');
+  const selectedTemplateId = watch('templateId');
 
-  const statusOptions: { value: StatusFilter; label: string }[] = [
-    { value: "", label: "All Statuses" },
-    { value: "draft", label: "Draft" },
-    { value: "pending_review", label: "Pending Review" },
-    { value: "final", label: "Final" },
-    { value: "archived", label: "Archived" },
-  ];
+  // Get engagement data for report preview
+  const selectedEngagement = engagements.find(e => e.id === selectedEngagementId);
+  const engagementObjectives = selectedEngagement
+    ? allObjectives.filter(o => o.engagementname?.id === selectedEngagement.id)
+    : [];
+  const engagementRisks = useMemo(() => {
+    if (!selectedEngagement) return [];
+    const objectiveIds = new Set(engagementObjectives.map(o => o.id));
+    return allEngagementRisks.filter(er => er.objectivename && objectiveIds.has(er.objectivename.id));
+  }, [selectedEngagement, engagementObjectives, allEngagementRisks]);
+  const engagementControls = useMemo(() => {
+    const riskIds = new Set(engagementRisks.map(r => r.id));
+    return allEngagementControls.filter(ec => ec.engagementriskname && riskIds.has(ec.engagementriskname.id));
+  }, [engagementRisks, allEngagementControls]);
+  const engagementFindings = useMemo(() => {
+    const controlIds = new Set(engagementControls.map(ec => ec.controlname?.id));
+    return allFindings.filter(f => f.controlname && controlIds.has(f.controlname.id));
+  }, [engagementControls, allFindings]);
+
+  const filteredReports = reports.filter(report =>
+    report.reporttitle.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    report.auditengagement?.engagementname?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  // Stats
+  const draftCount = reports.filter(r => r.statusKey === 'StatusKey0').length;
+  const inProgressCount = reports.filter(r => r.statusKey === 'StatusKey1').length;
+  const completedCount = reports.filter(r => r.statusKey === 'StatusKey2').length;
+
+  const openGenerateDialog = () => {
+    reset({ engagementId: '', templateId: '' });
+    setIsGenerateDialogOpen(true);
+  };
+
+  const onSubmitGenerate = async (data: GenerateReportFormData) => {
+    try {
+      const engagement = engagements.find(e => e.id === data.engagementId);
+      const template = templates.find(t => t.id === data.templateId);
+      const generator = auditUsers[0];
+
+      if (!engagement || !template || !generator) {
+        toast.error('Please select all required fields');
+        return;
+      }
+
+      setIsGenerating(true);
+
+      // Simulate report generation with a delay
+      await new Promise(resolve => setTimeout(resolve, 1500));
+
+      // Build scope and summaries from engagement data
+      const scope = `This audit engagement covers ${engagementObjectives.length} business objective(s), ${engagementRisks.length} identified risk(s), and ${engagementControls.length} control(s).`;
+      
+      const businessObjectivesSummary = engagementObjectives
+        .map(o => `• ${o.objectivename}${o.description ? `: ${o.description}` : ''}`)
+        .join('\n') || 'No business objectives defined.';
+
+      const rcmSummary = engagementRisks.map(er => {
+        const linkedControls = engagementControls.filter(ec => ec.engagementriskname?.id === er.id);
+        return `Risk: ${er.riskname?.riskname}\nControls: ${linkedControls.map(c => c.controlname?.controlname).join(', ') || 'None mapped'}`;
+      }).join('\n\n') || 'No risks or controls mapped.';
+
+      const findingsSummary = engagementFindings
+        .map(f => `• ${f.findingtitle}: ${f.recommendation || 'No recommendation'}`)
+        .join('\n') || 'No findings recorded.';
+
+      const payload = {
+        reporttitle: `${engagement.engagementname} - Audit Report`,
+        auditengagement: { id: engagement.id, engagementname: engagement.engagementname },
+        templatename: { id: template.id, templatename: template.templatename },
+        generatedby: { id: generator.id, auditusername: generator.auditusername },
+        generateddate: new Date().toISOString().split('T')[0],
+        statusKey: 'StatusKey2' as AuditReportStatusKey,
+        sharepointreporturl: `https://example.com/reports/${engagement.id}`,
+        scope,
+        businessobjectives: businessObjectivesSummary,
+        rcmsummary: rcmSummary,
+        findingssummary: findingsSummary,
+      };
+
+      await createMutation.mutateAsync(payload);
+      toast.success('Report generated successfully!');
+      setIsGenerateDialogOpen(false);
+      reset();
+    } catch {
+      toast.error('Failed to generate report');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleRetryGeneration = async (report: AuditReport) => {
+    try {
+      await updateMutation.mutateAsync({
+        id: report.id,
+        changedFields: {
+          statusKey: 'StatusKey1',
+        },
+      });
+      // Simulate retry
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      await updateMutation.mutateAsync({
+        id: report.id,
+        changedFields: {
+          statusKey: 'StatusKey2',
+        },
+      });
+      toast.success('Report regenerated successfully');
+    } catch {
+      toast.error('Failed to regenerate report');
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteReport) return;
+    try {
+      await deleteMutation.mutateAsync(deleteReport.id);
+      toast.success('Report deleted successfully');
+      setDeleteReport(null);
+    } catch {
+      toast.error('Failed to delete report');
+    }
+  };
 
   return (
-    <div className="space-y-6 p-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Audit Reports</h1>
-          <p className="mt-1 text-sm text-gray-500">
-            {reports?.count ?? 0} report{reports?.count !== 1 ? "s" : ""}
-          </p>
-        </div>
-        <button
-          onClick={() => setShowCreate(true)}
-          className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:opacity-90"
-        >
-          <Plus className="h-4 w-4" />
-          New Report
-        </button>
-      </div>
-
-      {/* Filters */}
-      <div className="flex gap-2">
-        {statusOptions.map((opt) => (
-          <button
-            key={opt.value}
-            onClick={() => setStatusFilter(opt.value)}
-            className={cn(
-              "rounded-full px-4 py-1.5 text-sm font-medium transition-colors",
-              statusFilter === opt.value
-                ? "bg-primary text-white"
-                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-            )}
-          >
-            {opt.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Table */}
-      <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
-        {isLoading ? (
-          <div className="flex items-center justify-center py-16">
-            <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-          </div>
-        ) : !reports?.results.length ? (
-          <div className="flex flex-col items-center justify-center py-16 text-gray-400">
-            <p className="text-sm">No reports found.</p>
-            <button
-              onClick={() => setShowCreate(true)}
-              className="mt-3 text-sm font-medium text-primary hover:underline"
-            >
-              Create your first report
-            </button>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-100 bg-gray-50 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
-                  <th className="px-6 py-3">Title</th>
-                  <th className="px-6 py-3">Engagement</th>
-                  <th className="px-6 py-3">Status</th>
-                  <th className="px-6 py-3">Generated By</th>
-                  <th className="px-6 py-3">Finalized At</th>
-                  <th className="px-6 py-3">Created At</th>
-                  <th className="px-6 py-3">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {reports.results.map((report) => (
-                  <tr key={report.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 font-medium text-gray-900">{report.title}</td>
-                    <td className="px-6 py-4 text-gray-600">{report.engagement_name}</td>
-                    <td className="px-6 py-4">
-                      <span
-                        className={cn(
-                          "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
-                          REPORT_STATUS_COLORS[report.status]
-                        )}
-                      >
-                        {REPORT_STATUS_LABELS[report.status]}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-gray-500">
-                      {report.generated_by ?? "—"}
-                    </td>
-                    <td className="px-6 py-4 text-gray-500">
-                      {formatDateTime(report.finalized_at)}
-                    </td>
-                    <td className="px-6 py-4 text-gray-500">
-                      {formatDate(report.created_at)}
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-2">
-                        {report.status === "draft" && (
-                          <button
-                            onClick={() => setEditingReport(report)}
-                            className="flex items-center gap-1 rounded-lg border border-gray-300 px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
-                          >
-                            <Pencil className="h-3 w-3" />
-                            Edit
-                          </button>
-                        )}
-                        {report.status !== "final" && report.status !== "archived" && (
-                          <button
-                            onClick={() => handleFinalize(report.id)}
-                            disabled={finalizeReport.isPending}
-                            className="flex items-center gap-1 rounded-lg bg-green-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-green-700 disabled:opacity-50"
-                          >
-                            <CheckSquare className="h-3 w-3" />
-                            Finalize
-                          </button>
-                        )}
-                        <button
-                          onClick={() => setConfirmDelete(report.id)}
-                          className="flex items-center gap-1 rounded-lg border border-red-200 px-2.5 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50"
-                        >
-                          <Trash2 className="h-3 w-3" />
-                          Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {/* Create dialog */}
-      {showCreate && <ReportFormDialog onClose={() => setShowCreate(false)} />}
-
-      {/* Edit dialog */}
-      {editingReport && (
-        <ReportFormDialog
-          editingId={editingReport.id}
-          initialData={{ title: editingReport.title }}
-          onClose={() => setEditingReport(null)}
-        />
-      )}
-
-      {/* Delete confirmation */}
-      {confirmDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-sm rounded-xl bg-white p-6 shadow-2xl">
-            <h2 className="text-lg font-semibold text-gray-900">Delete Report?</h2>
-            <p className="mt-2 text-sm text-gray-500">
-              This action cannot be undone.
-            </p>
-            <div className="mt-6 flex justify-end gap-3">
-              <button
-                onClick={() => setConfirmDelete(null)}
-                className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => handleDelete(confirmDelete)}
-                disabled={deleteReport.isPending}
-                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
-              >
-                {deleteReport.isPending ? "Deleting…" : "Delete"}
-              </button>
+    <div className="p-6 lg:p-8">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, ease: 'easeOut' as const }}
+        className="max-w-7xl mx-auto space-y-6"
+      >
+        {/* Header */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 bg-chart-3/10 rounded-xl flex items-center justify-center">
+              <FileCheck className="w-6 h-6 text-chart-3" />
+            </div>
+            <div>
+              <h1 className="font-display text-2xl lg:text-3xl font-bold text-foreground">
+                Audit Reports
+              </h1>
+              <p className="text-muted-foreground text-sm">
+                {reports.length} report{reports.length !== 1 ? 's' : ''} generated
+              </p>
             </div>
           </div>
+          <Button onClick={openGenerateDialog} className="gap-2">
+            <Plus className="w-4 h-4" />
+            Generate Report
+          </Button>
         </div>
-      )}
+
+        {/* Stats Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1, duration: 0.3 }}
+          >
+            <Card className="border-0 shadow-sm">
+              <CardContent className="p-4 flex items-center gap-4">
+                <div className="w-10 h-10 bg-muted rounded-lg flex items-center justify-center">
+                  <Clock className="w-5 h-5 text-muted-foreground" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-foreground">{draftCount}</p>
+                  <p className="text-sm text-muted-foreground">Draft</p>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.15, duration: 0.3 }}
+          >
+            <Card className="border-0 shadow-sm">
+              <CardContent className="p-4 flex items-center gap-4">
+                <div className="w-10 h-10 bg-chart-1/10 rounded-lg flex items-center justify-center">
+                  <Loader2 className="w-5 h-5 text-chart-1" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-foreground">{inProgressCount}</p>
+                  <p className="text-sm text-muted-foreground">In Progress</p>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2, duration: 0.3 }}
+          >
+            <Card className="border-0 shadow-sm">
+              <CardContent className="p-4 flex items-center gap-4">
+                <div className="w-10 h-10 bg-accent/10 rounded-lg flex items-center justify-center">
+                  <CheckCircle2 className="w-5 h-5 text-accent" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-foreground">{completedCount}</p>
+                  <p className="text-sm text-muted-foreground">Completed</p>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        </div>
+
+        {/* Search */}
+        <Card className="border-0 shadow-sm">
+          <CardContent className="p-4">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                placeholder="Search reports..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Reports Table */}
+        <Card className="border-0 shadow-sm">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg font-display flex items-center gap-2">
+              <FileText className="w-5 h-5 text-chart-3" />
+              Generated Reports
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {isLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <Spinner className="w-6 h-6" />
+              </div>
+            ) : filteredReports.length === 0 ? (
+              <div className="text-center py-12">
+                <FileCheck className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
+                <p className="font-medium text-foreground">No reports found</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  {searchQuery ? 'Try adjusting your search' : 'Generate your first audit report'}
+                </p>
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Report Title</TableHead>
+                    <TableHead>Engagement</TableHead>
+                    <TableHead>Template</TableHead>
+                    <TableHead>Generated By</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="w-[100px]">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  <AnimatePresence>
+                    {filteredReports.map((report, index) => {
+                      const StatusIcon = getStatusIcon(report.statusKey);
+                      return (
+                        <motion.tr
+                          key={report.id}
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -10 }}
+                          transition={{ delay: index * 0.03, duration: 0.2 }}
+                          className="group"
+                        >
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <div className="w-8 h-8 bg-chart-3/10 rounded-lg flex items-center justify-center">
+                                <FileCheck className="w-4 h-4 text-chart-3" />
+                              </div>
+                              <span className="font-medium text-foreground">{report.reporttitle}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-1.5">
+                              <Briefcase className="w-3.5 h-3.5 text-muted-foreground" />
+                              <span className="text-sm">{report.auditengagement?.engagementname || '—'}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <span className="text-sm">{report.templatename?.templatename || '—'}</span>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-1.5">
+                              <User className="w-3.5 h-3.5 text-muted-foreground" />
+                              <span className="text-sm">{report.generatedby?.auditusername || '—'}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-1.5">
+                              <Calendar className="w-3.5 h-3.5 text-muted-foreground" />
+                              <span className="text-sm">
+                                {report.generateddate ? new Date(report.generateddate).toLocaleDateString() : '—'}
+                              </span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className={`text-xs ${getStatusColor(report.statusKey)}`}>
+                              <StatusIcon className={`w-3 h-3 mr-1 ${report.statusKey === 'StatusKey1' ? 'animate-spin' : ''}`} />
+                              {AuditReportStatusKeyToLabel[report.statusKey]}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-1">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => setViewingReport(report)}
+                              >
+                                <Eye className="w-4 h-4" />
+                              </Button>
+                              {report.sharepointreporturl && (
+                                <a
+                                  href={report.sharepointreporturl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                >
+                                  <Button variant="ghost" size="icon" className="h-8 w-8">
+                                    <ExternalLink className="w-4 h-4" />
+                                  </Button>
+                                </a>
+                              )}
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="icon" className="h-8 w-8">
+                                    <MoreHorizontal className="w-4 h-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  {report.statusKey === 'StatusKey3' && (
+                                    <DropdownMenuItem onClick={() => handleRetryGeneration(report)}>
+                                      <RefreshCw className="w-4 h-4 mr-2" />
+                                      Retry Generation
+                                    </DropdownMenuItem>
+                                  )}
+                                  <DropdownMenuItem
+                                    onClick={() => setDeleteReport(report)}
+                                    className="text-destructive"
+                                  >
+                                    <Trash2 className="w-4 h-4 mr-2" />
+                                    Delete
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </div>
+                          </TableCell>
+                        </motion.tr>
+                      );
+                    })}
+                  </AnimatePresence>
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+      </motion.div>
+
+      {/* Generate Report Dialog */}
+      <Dialog open={isGenerateDialogOpen} onOpenChange={setIsGenerateDialogOpen}>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh]">
+          <DialogHeader>
+            <DialogTitle className="font-display flex items-center gap-2">
+              <FileCheck className="w-5 h-5 text-chart-3" />
+              Generate Audit Report
+            </DialogTitle>
+            <DialogDescription>
+              Select an engagement and template to generate a comprehensive audit report.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleSubmit(onSubmitGenerate)} className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Audit Engagement *</Label>
+                <Select
+                  value={selectedEngagementId || ''}
+                  onValueChange={(value) => setValue('engagementId', value)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select engagement" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {engagements.map((engagement) => (
+                      <SelectItem key={engagement.id} value={engagement.id}>
+                        {engagement.engagementname}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Report Template *</Label>
+                <Select
+                  value={selectedTemplateId || ''}
+                  onValueChange={(value) => setValue('templateId', value)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select template" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {templates.map((template) => (
+                      <SelectItem key={template.id} value={template.id}>
+                        {template.templatename}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Report Preview */}
+            {selectedEngagement && (
+              <div className="border border-border rounded-lg p-4 bg-muted/30">
+                <h4 className="font-medium text-foreground mb-3 flex items-center gap-2">
+                  <Eye className="w-4 h-4" />
+                  Report Content Preview
+                </h4>
+                <div className="space-y-3 text-sm">
+                  <div className="flex items-start gap-2">
+                    <Target className="w-4 h-4 text-chart-2 mt-0.5" />
+                    <div>
+                      <p className="font-medium text-foreground">Business Objectives ({engagementObjectives.length})</p>
+                      <p className="text-muted-foreground">
+                        {engagementObjectives.slice(0, 3).map(o => o.objectivename).join(', ')}
+                        {engagementObjectives.length > 3 && ` +${engagementObjectives.length - 3} more`}
+                      </p>
+                    </div>
+                  </div>
+                  <Separator />
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 text-chart-4 mt-0.5" />
+                    <div>
+                      <p className="font-medium text-foreground">Risk & Control Matrix ({engagementRisks.length} risks, {engagementControls.length} controls)</p>
+                      <p className="text-muted-foreground">
+                        {engagementRisks.slice(0, 2).map(r => r.riskname?.riskname).join(', ')}
+                        {engagementRisks.length > 2 && ` +${engagementRisks.length - 2} more`}
+                      </p>
+                    </div>
+                  </div>
+                  <Separator />
+                  <div className="flex items-start gap-2">
+                    <ShieldCheck className="w-4 h-4 text-accent mt-0.5" />
+                    <div>
+                      <p className="font-medium text-foreground">Audit Findings ({engagementFindings.length})</p>
+                      <p className="text-muted-foreground">
+                        {engagementFindings.length > 0 
+                          ? engagementFindings.slice(0, 2).map(f => f.findingtitle).join(', ')
+                          : 'No findings recorded'}
+                        {engagementFindings.length > 2 && ` +${engagementFindings.length - 2} more`}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setIsGenerateDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button 
+                type="submit" 
+                disabled={isGenerating || !selectedEngagementId || !selectedTemplateId}
+              >
+                {isGenerating && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                {isGenerating ? 'Generating...' : 'Generate Report'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* View Report Dialog */}
+      <Dialog open={!!viewingReport} onOpenChange={(open) => !open && setViewingReport(null)}>
+        <DialogContent className="sm:max-w-3xl max-h-[90vh]">
+          <DialogHeader>
+            <DialogTitle className="font-display flex items-center gap-2">
+              <FileCheck className="w-5 h-5 text-chart-3" />
+              {viewingReport?.reporttitle}
+            </DialogTitle>
+            <DialogDescription>
+              Generated on {viewingReport?.generateddate ? new Date(viewingReport.generateddate).toLocaleDateString() : '—'}
+            </DialogDescription>
+          </DialogHeader>
+          <ScrollArea className="max-h-[60vh]">
+            <div className="space-y-6 p-1">
+              {/* Report Meta */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Engagement</p>
+                  <p className="text-sm font-medium">{viewingReport?.auditengagement?.engagementname}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Template</p>
+                  <p className="text-sm font-medium">{viewingReport?.templatename?.templatename}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Generated By</p>
+                  <p className="text-sm font-medium">{viewingReport?.generatedby?.auditusername}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Status</p>
+                  <Badge variant="outline" className={`text-xs ${getStatusColor(viewingReport?.statusKey)}`}>
+                    {viewingReport?.statusKey ? AuditReportStatusKeyToLabel[viewingReport.statusKey] : '—'}
+                  </Badge>
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* Scope */}
+              <div className="space-y-2">
+                <h4 className="font-medium text-foreground flex items-center gap-2">
+                  <Briefcase className="w-4 h-4 text-chart-1" />
+                  Scope
+                </h4>
+                <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+                  {viewingReport?.scope || 'No scope defined.'}
+                </p>
+              </div>
+
+              <Separator />
+
+              {/* Business Objectives */}
+              <div className="space-y-2">
+                <h4 className="font-medium text-foreground flex items-center gap-2">
+                  <Target className="w-4 h-4 text-chart-2" />
+                  Business Objectives
+                </h4>
+                <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+                  {viewingReport?.businessobjectives || 'No business objectives defined.'}
+                </p>
+              </div>
+
+              <Separator />
+
+              {/* RCM Summary */}
+              <div className="space-y-2">
+                <h4 className="font-medium text-foreground flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-chart-4" />
+                  Risk & Control Matrix
+                </h4>
+                <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+                  {viewingReport?.rcmsummary || 'No risks or controls mapped.'}
+                </p>
+              </div>
+
+              <Separator />
+
+              {/* Findings */}
+              <div className="space-y-2">
+                <h4 className="font-medium text-foreground flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-accent" />
+                  Audit Findings
+                </h4>
+                <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+                  {viewingReport?.findingssummary || 'No findings recorded.'}
+                </p>
+              </div>
+
+              {/* SharePoint Link */}
+              {viewingReport?.sharepointreporturl && (
+                <>
+                  <Separator />
+                  <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                    <div className="flex items-center gap-2">
+                      <ExternalLink className="w-4 h-4 text-muted-foreground" />
+                      <span className="text-sm text-muted-foreground">Full report available in SharePoint</span>
+                    </div>
+                    <a
+                      href={viewingReport.sharepointreporturl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <Button variant="outline" size="sm">
+                        <ExternalLink className="w-4 h-4 mr-2" />
+                        Open in SharePoint
+                      </Button>
+                    </a>
+                  </div>
+                </>
+              )}
+            </div>
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation */}
+      <AlertDialog open={!!deleteReport} onOpenChange={(open) => !open && setDeleteReport(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Report</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{deleteReport?.reporttitle}"? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleteMutation.isPending && <Spinner className="w-4 h-4 mr-2" />}
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
