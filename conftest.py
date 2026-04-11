@@ -509,3 +509,17 @@ def read_only_client(db, read_only_user):
     client = APIClient()
     client.force_authenticate(user=read_only_user)
     return client
+
+
+@pytest.fixture
+def control_owner_client(db, control_owner_user):
+    client = APIClient()
+    client.force_authenticate(user=control_owner_user)
+    return client
+
+
+@pytest.fixture
+def finding_owner_client(db, finding_owner_user):
+    client = APIClient()
+    client.force_authenticate(user=finding_owner_user)
+    return client

@@ -57,7 +57,10 @@ class TestFindingListCreate:
         assert resp.status_code == 200
 
     def test_auditor_can_create(self, auditor_client, auditor_user):
+        # EPIC 2: assign the auditor to the engagement team before creating.
+        from conftest import EngagementAuditorFactory
         engagement = AuditEngagementFactory()
+        EngagementAuditorFactory(engagement=engagement, auditor=auditor_user)
         data = {
             "engagement": str(engagement.pk),
             "title": "Segregation of Duties Gap",
@@ -105,49 +108,78 @@ class TestFindingListCreate:
         for f in resp.data["results"]:
             assert f["status"] == "open"
 
-    def test_finding_owner_role_gets_403(self, db):
-        """finding_owner role is not in IsAuditorOrAbove, so they cannot list findings."""
+    def test_finding_owner_can_list_own_non_draft_findings(self, db):
+        """
+        EPIC 2: finding_owner role may now list the endpoint.
+        The queryset is scoped to their own non-draft findings.
+        """
         owner = UserFactory(role="finding_owner")
-        FindingFactory(owner=owner)
+        # Non-draft finding owned by this user — should appear in list.
+        FindingFactory(owner=owner, status="open")
+        # Draft finding owned by this user — should NOT appear (team-member only).
+        FindingFactory(owner=owner, status="draft")
+        # Open finding owned by someone else — should NOT appear.
+        FindingFactory(status="open")
 
         from rest_framework.test import APIClient
 
         client = APIClient()
         client.force_authenticate(user=owner)
         resp = client.get(FINDINGS_URL)
-        assert resp.status_code == 403
+        assert resp.status_code == 200
+        # Only the one non-draft finding they own should appear.
+        assert resp.data["count"] == 1
 
 
 @pytest.mark.django_db
 class TestFindingDetail:
-    def test_retrieve(self, auditor_client):
-        finding = FindingFactory(title="Known Finding")
+    def test_retrieve(self, auditor_client, auditor_user):
+        # EPIC 2: auditor must be on the team to read a draft finding.
+        from conftest import EngagementAuditorFactory
+        finding = FindingFactory(title="Known Finding", status="draft")
+        EngagementAuditorFactory(engagement=finding.engagement, auditor=auditor_user)
         resp = auditor_client.get(f"{FINDINGS_URL}{finding.pk}/")
         assert resp.status_code == 200
         assert resp.data["title"] == "Known Finding"
 
-    def test_retrieve_includes_nested_data(self, auditor_client):
-        finding = FindingFactory()
+    def test_retrieve_includes_nested_data(self, auditor_client, auditor_user):
+        # EPIC 2: auditor must be on the team to read a draft finding.
+        from conftest import EngagementAuditorFactory
+        finding = FindingFactory(status="draft")
+        EngagementAuditorFactory(engagement=finding.engagement, auditor=auditor_user)
         RemediationActionFactory(finding=finding)
         resp = auditor_client.get(f"{FINDINGS_URL}{finding.pk}/")
         assert resp.status_code == 200
         assert len(resp.data["remediation_actions"]) == 1
 
-    def test_partial_update_by_auditor(self, auditor_client):
+    def test_partial_update_by_auditor(self, auditor_client, auditor_user):
+        # EPIC 2: auditor must be on the engagement team to edit a draft finding.
+        from conftest import EngagementAuditorFactory
         finding = FindingFactory(status="draft")
+        EngagementAuditorFactory(engagement=finding.engagement, auditor=auditor_user)
         resp = auditor_client.patch(
             f"{FINDINGS_URL}{finding.pk}/",
-            {"status": "open"},
+            {"severity": "high"},
         )
         assert resp.status_code == 200
-        assert resp.data["status"] == "open"
+        assert resp.data["severity"] == "high"
 
-    def test_delete_requires_manager(self, auditor_client, manager_client):
-        finding = FindingFactory()
+    def test_delete_requires_manager(self, auditor_client, auditor_user, manager_user):
+        # EPIC 2: the deleting manager must be THIS engagement's audit_manager.
+        from conftest import EngagementAuditorFactory
+        from rest_framework.test import APIClient
+        finding = FindingFactory(status="open")
+        finding.engagement.audit_manager = manager_user
+        finding.engagement.save()
+        EngagementAuditorFactory(engagement=finding.engagement, auditor=auditor_user)
+
+        manager_client = APIClient()
+        manager_client.force_authenticate(user=manager_user)
+
         # Auditor cannot delete
         resp = auditor_client.delete(f"{FINDINGS_URL}{finding.pk}/")
         assert resp.status_code == 403
-        # Manager can delete
+        # Engagement manager can delete
         resp = manager_client.delete(f"{FINDINGS_URL}{finding.pk}/")
         assert resp.status_code == 204
 
@@ -161,9 +193,12 @@ class TestFindingDetail:
 
 @pytest.mark.django_db
 class TestFindingNested:
-    def test_list_scoped_to_engagement(self, auditor_client):
-        f1 = FindingFactory()
-        FindingFactory()  # different engagement
+    def test_list_scoped_to_engagement(self, auditor_client, auditor_user):
+        # EPIC 2: assign auditor to the engagement so they can see its findings.
+        from conftest import EngagementAuditorFactory
+        f1 = FindingFactory(status="open")  # use open so the auditor can read it
+        EngagementAuditorFactory(engagement=f1.engagement, auditor=auditor_user)
+        FindingFactory(status="open")  # different engagement — not visible to this auditor
         url = f"/api/v1/engagements/{f1.engagement.pk}/findings/"
         resp = auditor_client.get(url)
         assert resp.status_code == 200
@@ -171,8 +206,11 @@ class TestFindingNested:
         # Verify we get only 1 result (the scoped finding).
         assert resp.data["count"] == 1
 
-    def test_create_sets_engagement_from_url(self, auditor_client):
+    def test_create_sets_engagement_from_url(self, auditor_client, auditor_user):
+        # EPIC 2: auditor must be on the team to create findings via nested route.
+        from conftest import EngagementAuditorFactory
         engagement = AuditEngagementFactory()
+        EngagementAuditorFactory(engagement=engagement, auditor=auditor_user)
         url = f"/api/v1/engagements/{engagement.pk}/findings/"
         data = {
             "engagement": str(engagement.pk),  # serializer requires it in body
