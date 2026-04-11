@@ -170,6 +170,243 @@ class ApprovalRequestFactory(DjangoModelFactory):
     status = "pending"
 
 
+# ── Taxonomy factories ─────────────────────────────────────────────────────────
+
+class RiskCategoryFactory(DjangoModelFactory):
+    class Meta:
+        model = "taxonomy.RiskCategory"
+
+    name = factory.Sequence(lambda n: f"Risk Category {n}")
+    description = "A test risk category."
+    is_active = True
+
+
+class RiskSubcategoryFactory(DjangoModelFactory):
+    class Meta:
+        model = "taxonomy.RiskSubcategory"
+
+    category = factory.SubFactory(RiskCategoryFactory)
+    name = factory.Sequence(lambda n: f"Risk Subcategory {n}")
+    description = "A test risk subcategory."
+    is_active = True
+
+
+class RiskScoringConfigFactory(DjangoModelFactory):
+    class Meta:
+        model = "taxonomy.RiskScoringConfig"
+
+    name = factory.Sequence(lambda n: f"Scoring Config {n}")
+    description = "A test scoring configuration."
+    scoring_method = "multiplicative"
+    likelihood_scale = 5
+    impact_scale = 5
+    critical_threshold = 20
+    high_threshold = 12
+    medium_threshold = 6
+    is_default = False
+    is_active = True
+
+
+# ── Universe factories ─────────────────────────────────────────────────────────
+
+class AuditableDomainFactory(DjangoModelFactory):
+    class Meta:
+        model = "universe.AuditableDomain"
+
+    name = factory.Sequence(lambda n: f"Auditable Domain {n}")
+    description = "A test auditable domain."
+    is_active = True
+
+
+class AuditableEntityFactory(DjangoModelFactory):
+    class Meta:
+        model = "universe.AuditableEntity"
+
+    name = factory.Sequence(lambda n: f"Auditable Entity {n}")
+    description = "A test auditable entity."
+    domain = factory.SubFactory(AuditableDomainFactory)
+    entity_type = "process"
+    inherent_risk_rating = "medium"
+    is_active = True
+
+
+class SubprocessFactory(DjangoModelFactory):
+    class Meta:
+        model = "universe.Subprocess"
+
+    name = factory.Sequence(lambda n: f"Subprocess {n}")
+    description = "A test subprocess."
+    business_process = factory.SubFactory(BusinessProcessFactory)
+    auditable_entity = factory.SubFactory(AuditableEntityFactory)
+    sequence_order = factory.Sequence(lambda n: n)
+    is_active = True
+
+
+# ── Framework factories ────────────────────────────────────────────────────────
+
+class CitationSourceFactory(DjangoModelFactory):
+    class Meta:
+        model = "frameworks.CitationSource"
+
+    name = factory.Sequence(lambda n: f"Citation Source {n}")
+    source_type = "standard"
+    publisher = "Test Publisher"
+
+
+class FrameworkFactory(DjangoModelFactory):
+    class Meta:
+        model = "frameworks.Framework"
+
+    name = factory.Sequence(lambda n: f"Framework {n}")
+    short_name = factory.Sequence(lambda n: f"FW{n}")
+    description = "A test compliance framework."
+    framework_type = "compliance"
+    version = "1.0"
+    is_active = True
+
+
+class FrameworkRequirementFactory(DjangoModelFactory):
+    class Meta:
+        model = "frameworks.FrameworkRequirement"
+
+    framework = factory.SubFactory(FrameworkFactory)
+    requirement_id = factory.Sequence(lambda n: f"REQ-{n:03d}")
+    title = factory.Sequence(lambda n: f"Requirement {n}")
+    description = "A test framework requirement."
+    requirement_type = "control"
+    is_active = True
+
+
+class ControlObjectiveFactory(DjangoModelFactory):
+    class Meta:
+        model = "frameworks.ControlObjective"
+
+    name = factory.Sequence(lambda n: f"Control Objective {n}")
+    description = "A test control objective."
+    reference_code = factory.Sequence(lambda n: f"CO-{n:03d}")
+    is_active = True
+
+
+class ControlActivityFactory(DjangoModelFactory):
+    class Meta:
+        model = "frameworks.ControlActivity"
+
+    name = factory.Sequence(lambda n: f"Control Activity {n}")
+    description = "A test control activity."
+    control = factory.SubFactory(ControlFactory)
+    activity_type = "preventive"
+    is_active = True
+
+
+class ControlRequirementMappingFactory(DjangoModelFactory):
+    class Meta:
+        model = "frameworks.ControlRequirementMapping"
+
+    control = factory.SubFactory(ControlFactory)
+    framework_requirement = factory.SubFactory(FrameworkRequirementFactory)
+    mapping_type = "satisfies"
+    notes = "Test mapping notes."
+
+
+# ── Testing factories ──────────────────────────────────────────────────────────
+
+class TestingMethodFactory(DjangoModelFactory):
+    class Meta:
+        model = "testing.TestingMethod"
+
+    name = factory.Sequence(lambda n: f"Testing Method {n}")
+    description = "A test testing method."
+    method_type = "inspection"
+
+
+class AssertionTypeFactory(DjangoModelFactory):
+    class Meta:
+        model = "testing.AssertionType"
+
+    name = factory.Sequence(lambda n: f"Assertion Type {n}")
+    description = "A test assertion type."
+
+
+class TestPlanFactory(DjangoModelFactory):
+    class Meta:
+        model = "testing.TestPlan"
+
+    name = factory.Sequence(lambda n: f"Test Plan {n}")
+    description = "A test plan description."
+    control = factory.SubFactory(ControlFactory)
+    sampling_method = "random"
+    design_effectiveness_status = "not_assessed"
+    status = "draft"
+
+
+class TestInstanceFactory(DjangoModelFactory):
+    class Meta:
+        model = "testing.TestInstance"
+
+    test_plan = factory.SubFactory(TestPlanFactory)
+    instance_number = factory.Sequence(lambda n: n + 1)
+    operating_effectiveness_status = "not_tested"
+    conclusion = "Test conclusion."
+
+
+class SampleItemFactory(DjangoModelFactory):
+    class Meta:
+        model = "testing.SampleItem"
+
+    test_instance = factory.SubFactory(TestInstanceFactory)
+    item_identifier = factory.Sequence(lambda n: f"ITEM-{n:04d}")
+    description = "A test sample item."
+    result = "not_tested"
+
+
+class TestExceptionFactory(DjangoModelFactory):
+    class Meta:
+        model = "testing.TestException"
+
+    test_instance = factory.SubFactory(TestInstanceFactory)
+    title = factory.Sequence(lambda n: f"Test Exception {n}")
+    description = "A test exception description."
+    exception_type = "operating"
+    severity = "medium"
+
+
+# ── Jurisdiction factories ─────────────────────────────────────────────────────
+
+class JurisdictionFactory(DjangoModelFactory):
+    class Meta:
+        model = "jurisdictions.Jurisdiction"
+
+    name = factory.Sequence(lambda n: f"Jurisdiction {n}")
+    short_name = factory.Sequence(lambda n: f"JUR{n}")
+    jurisdiction_type = "regulator"
+    country = "US"
+    is_active = True
+
+
+class RequirementOverlayFactory(DjangoModelFactory):
+    class Meta:
+        model = "jurisdictions.RequirementOverlay"
+
+    jurisdiction = factory.SubFactory(JurisdictionFactory)
+    framework_requirement = factory.SubFactory(FrameworkRequirementFactory)
+    overlay_type = "stricter"
+    overlay_text = "A stricter overlay requirement text."
+    effective_date = "2024-01-01"
+    is_active = True
+
+
+class ApplicabilityLogicFactory(DjangoModelFactory):
+    class Meta:
+        model = "jurisdictions.ApplicabilityLogic"
+
+    name = factory.Sequence(lambda n: f"Applicability Rule {n}")
+    description = "A test applicability rule."
+    jurisdiction = factory.SubFactory(JurisdictionFactory)
+    condition_type = "always"
+    is_applicable = True
+    effective_date = "2024-01-01"
+
+
 # ── Report factories ───────────────────────────────────────────────────────────
 
 class AuditReportTemplateFactory(DjangoModelFactory):

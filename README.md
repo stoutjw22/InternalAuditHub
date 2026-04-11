@@ -440,6 +440,74 @@ For production, set `DEBUG=False` and configure:
 
 ---
 
+## Architecture — EPIC 1: Governance & Compliance Backbone
+
+EPIC 1 establishes the core domain model that underpins all audit, risk, and compliance workflows. The five apps below form a layered backbone consumed by the engagement and findings layers above them.
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                        AUDIT UNIVERSE                               │
+│  AuditableDomain (hierarchy)  →  AuditableEntity  →  Subprocess    │
+│  Linked to: BusinessProcess (core), Risks, Controls, Test Plans     │
+└───────────────────────────────┬─────────────────────────────────────┘
+                                │ scoped by
+┌───────────────────────────────▼─────────────────────────────────────┐
+│                      FRAMEWORK LIBRARY                              │
+│  CitationSource  →  Framework (versioned, effective-dated)          │
+│  Framework  →  FrameworkRequirement (hierarchical clauses)          │
+│  FrameworkRequirement  ←M2M→  ControlObjective                      │
+│  FrameworkRequirement  ←M2M→  ControlActivity                       │
+│  Control  ←[ControlRequirementMapping]→  FrameworkRequirement       │
+└───────────────────────────────┬─────────────────────────────────────┘
+                                │ overlaid by
+┌───────────────────────────────▼─────────────────────────────────────┐
+│                  JURISDICTION / REGULATORY OVERLAY                  │
+│  Jurisdiction  →  RequirementOverlay (per framework requirement)    │
+│  Jurisdiction  →  ApplicabilityLogic (condition-driven, entity-     │
+│                   scoped, effective-dated)                          │
+└─────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────┐
+│                       RISK TAXONOMY                                 │
+│  RiskCategory  →  RiskSubcategory                                   │
+│  RiskScoringConfig — configurable multiplicative / additive /       │
+│                      weighted scoring with threshold ratings        │
+│  Used by: Risk.risk_category / Risk.scoring_config FKs             │
+└─────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────┐
+│                         TEST LAYER                                  │
+│  TestingMethod  +  AssertionType  (reference data)                  │
+│  TestPlan       — design effectiveness; sampling parameters         │
+│  TestInstance   — operating effectiveness per execution run         │
+│  SampleItem     — individual item-level pass/fail result            │
+│  TestException  — deviation, optionally escalated to Finding        │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Key design decisions
+
+| Decision | Rationale |
+|---|---|
+| UUID primary keys on all models | Safe for distributed ID generation; interoperable with external integrations |
+| Effective-dating on Framework, FrameworkRequirement, ControlRequirementMapping, RequirementOverlay, ApplicabilityLogic | Tracks old and new framework versions simultaneously without data loss |
+| `ControlRequirementMapping` as explicit M2M through-table | Carries `mapping_type` (satisfies / partially / compensating) and date metadata not possible with a bare M2M |
+| `ApplicabilityLogic.condition_config` as JSONField | Condition parameters vary by `condition_type`; a typed JSON bag avoids nullable-column explosion |
+| Separate `TestPlan` (design) and `TestInstance` (operating) | Mirrors the GAAS/PCAOB design-vs-operating-effectiveness distinction; one plan has many dated execution runs |
+| `RiskScoringConfig` with pluggable method | Serves 3×3, 5×5, and weighted matrices without code changes; `compute_score()` and `rating_for_score()` are pure-Python helpers |
+
+### Apps introduced in EPIC 1
+
+| App | Package | Purpose |
+|---|---|---|
+| `taxonomy` | `apps.taxonomy` | Risk category hierarchy + configurable scoring |
+| `universe` | `apps.universe` | Auditable domain/entity/subprocess hierarchy |
+| `frameworks` | `apps.frameworks` | Versioned framework library, hierarchical requirements, control mappings |
+| `testing` | `apps.testing` | Test plans, execution instances, sampling, exceptions |
+| `jurisdictions` | `apps.jurisdictions` | Regulatory overlays and applicability logic per entity/jurisdiction |
+
+---
+
 ## Contributing
 
 1. Fork the repo and create a feature branch
