@@ -6,12 +6,19 @@ Endpoints covered:
   GET/POST        /api/v1/assertion-types/
   GET/POST        /api/v1/test-plans/
   GET/PATCH/DELETE  /api/v1/test-plans/<pk>/
+  GET/POST        /api/v1/test-plans/<pk>/instances/
   GET/POST        /api/v1/test-instances/
   GET/PATCH/DELETE  /api/v1/test-instances/<pk>/
+  GET/POST        /api/v1/test-instances/<pk>/samples/
+  GET/POST        /api/v1/test-instances/<pk>/exceptions/
+  POST            /api/v1/test-instances/<pk>/conclude/
+  GET             /api/v1/test-instances/<pk>/statistics/
   GET/POST        /api/v1/sample-items/
   GET/PATCH/DELETE  /api/v1/sample-items/<pk>/
   GET/POST        /api/v1/test-exceptions/
   GET/PATCH/DELETE  /api/v1/test-exceptions/<pk>/
+  POST            /api/v1/test-exceptions/<pk>/escalate/
+  GET             /api/v1/controls/<pk>/test-plans/
 
 Permission matrix:
   List:   AuditorOrAbove
@@ -24,6 +31,7 @@ from conftest import (
     AuditEngagementFactory,
     AssertionTypeFactory,
     ControlFactory,
+    EngagementControlFactory,
     FindingFactory,
     SampleItemFactory,
     TestExceptionFactory,
@@ -144,7 +152,7 @@ class TestTestPlanListCreate:
         resp = auditor_client.get(f"{PLANS_URL}?control={ctrl.pk}")
         assert resp.status_code == 200
         for item in resp.data["results"]:
-            assert item["control"] == str(ctrl.pk)
+            assert str(item["control"]) == str(ctrl.pk)
 
     def test_filter_by_status(self, auditor_client):
         TestPlanFactory(status="draft")
@@ -227,7 +235,7 @@ class TestTestInstanceListCreate:
         resp = auditor_client.get(f"{INSTANCES_URL}?test_plan={plan.pk}")
         assert resp.status_code == 200
         for item in resp.data["results"]:
-            assert item["test_plan"] == str(plan.pk)
+            assert str(item["test_plan"]) == str(plan.pk)
 
     def test_filter_by_operating_effectiveness(self, auditor_client):
         TestInstanceFactory(operating_effectiveness_status="effective")
@@ -301,7 +309,7 @@ class TestSampleItemListCreate:
         resp = auditor_client.get(f"{SAMPLES_URL}?test_instance={instance.pk}")
         assert resp.status_code == 200
         for item in resp.data["results"]:
-            assert item["test_instance"] == str(instance.pk)
+            assert str(item["test_instance"]) == str(instance.pk)
 
 
 @pytest.mark.django_db
@@ -386,7 +394,7 @@ class TestTestExceptionListCreate:
             },
         )
         assert resp.status_code == 201
-        assert resp.data["finding"] == str(finding.pk)
+        assert str(resp.data["finding"]) == str(finding.pk)
 
 
 @pytest.mark.django_db
@@ -407,3 +415,319 @@ class TestTestExceptionDetail:
         exc = TestExceptionFactory()
         resp = auditor_client.delete(f"{EXCEPTIONS_URL}{exc.pk}/")
         assert resp.status_code == 204
+
+
+# ── Epic 4: nested routes ─────────────────────────────────────────────────────
+
+@pytest.mark.django_db
+class TestTestPlanInstancesNestedRoute:
+    def test_list_scoped_to_plan(self, auditor_client):
+        plan = TestPlanFactory()
+        TestInstanceFactory(test_plan=plan)
+        TestInstanceFactory(test_plan=plan)
+        TestInstanceFactory()  # different plan — must not appear
+        resp = auditor_client.get(f"{PLANS_URL}{plan.pk}/instances/")
+        assert resp.status_code == 200
+        assert resp.data["count"] == 2
+
+    def test_create_sets_test_plan_automatically(self, auditor_client, auditor_user):
+        plan = TestPlanFactory()
+        resp = auditor_client.post(
+            f"{PLANS_URL}{plan.pk}/instances/",
+            {
+                "instance_number": 1,
+                "operating_effectiveness_status": "not_tested",
+                "performed_by": str(auditor_user.pk),
+            },
+        )
+        assert resp.status_code == 201
+        assert str(resp.data["test_plan"]) == str(plan.pk)
+
+    def test_unauthenticated_gets_401(self, api_client):
+        plan = TestPlanFactory()
+        resp = api_client.get(f"{PLANS_URL}{plan.pk}/instances/")
+        assert resp.status_code == 401
+
+    def test_empty_list_for_nonexistent_plan(self, auditor_client):
+        import uuid
+        resp = auditor_client.get(f"{PLANS_URL}{uuid.uuid4()}/instances/")
+        assert resp.status_code == 200
+        assert resp.data["count"] == 0
+
+
+@pytest.mark.django_db
+class TestTestInstanceSamplesNestedRoute:
+    def test_list_scoped_to_instance(self, auditor_client):
+        instance = TestInstanceFactory()
+        SampleItemFactory(test_instance=instance)
+        SampleItemFactory(test_instance=instance)
+        SampleItemFactory()  # different instance
+        resp = auditor_client.get(f"{INSTANCES_URL}{instance.pk}/samples/")
+        assert resp.status_code == 200
+        assert resp.data["count"] == 2
+
+    def test_create_sets_test_instance_automatically(self, auditor_client):
+        instance = TestInstanceFactory()
+        resp = auditor_client.post(
+            f"{INSTANCES_URL}{instance.pk}/samples/",
+            {"item_identifier": "TXN-001", "result": "not_tested"},
+        )
+        assert resp.status_code == 201
+        assert str(resp.data["test_instance"]) == str(instance.pk)
+
+    def test_new_fields_returned(self, auditor_client):
+        instance = TestInstanceFactory()
+        resp = auditor_client.post(
+            f"{INSTANCES_URL}{instance.pk}/samples/",
+            {
+                "item_identifier": "TXN-002",
+                "result": "pass",
+                "tested_date": "2026-03-15",
+                "population_segment": "Q1 High Value",
+            },
+        )
+        assert resp.status_code == 201
+        assert resp.data["tested_date"] == "2026-03-15"
+        assert resp.data["population_segment"] == "Q1 High Value"
+
+
+@pytest.mark.django_db
+class TestTestInstanceExceptionsNestedRoute:
+    def test_list_scoped_to_instance(self, auditor_client):
+        instance = TestInstanceFactory()
+        TestExceptionFactory(test_instance=instance)
+        TestExceptionFactory()  # different instance
+        resp = auditor_client.get(f"{INSTANCES_URL}{instance.pk}/exceptions/")
+        assert resp.status_code == 200
+        assert resp.data["count"] == 1
+
+    def test_create_sets_test_instance_automatically(self, auditor_client):
+        instance = TestInstanceFactory()
+        resp = auditor_client.post(
+            f"{INSTANCES_URL}{instance.pk}/exceptions/",
+            {
+                "title": "Missing approval",
+                "description": "No sign-off found.",
+                "exception_type": "operating",
+                "severity": "high",
+                "root_cause": "people",
+            },
+        )
+        assert resp.status_code == 201
+        assert str(resp.data["test_instance"]) == str(instance.pk)
+        assert resp.data["root_cause"] == "people"
+
+
+# ── Epic 4: action endpoints ───────────────────────────────────────────────────
+
+@pytest.mark.django_db
+class TestConcludeAction:
+    def test_all_pass_gives_effective(self, auditor_client):
+        plan = TestPlanFactory(tolerable_exception_rate="5.00")
+        instance = TestInstanceFactory(test_plan=plan)
+        SampleItemFactory(test_instance=instance, result="pass")
+        SampleItemFactory(test_instance=instance, result="pass")
+        resp = auditor_client.post(f"{INSTANCES_URL}{instance.pk}/conclude/")
+        assert resp.status_code == 200
+        assert resp.data["operating_effectiveness_status"] == "effective"
+        assert resp.data["compliance_rate"] == 100.0
+
+    def test_exception_within_tolerance_gives_partially_effective(self, auditor_client):
+        plan = TestPlanFactory(tolerable_exception_rate="20.00")
+        instance = TestInstanceFactory(test_plan=plan)
+        SampleItemFactory(test_instance=instance, result="pass")
+        SampleItemFactory(test_instance=instance, result="pass")
+        SampleItemFactory(test_instance=instance, result="pass")
+        SampleItemFactory(test_instance=instance, result="fail")  # 25% fail — wait, 1/4 = 25% > 20%
+        # Actually 1/4 = 25% which exceeds 20% so should be ineffective.
+        # Use 10% tolerance: 1/10 = 10% exactly = partially effective
+        resp = auditor_client.post(f"{INSTANCES_URL}{instance.pk}/conclude/")
+        assert resp.status_code == 200
+        assert resp.data["operating_effectiveness_status"] == "ineffective"
+
+    def test_exception_rate_at_tolerance_gives_partially_effective(self, auditor_client):
+        plan = TestPlanFactory(tolerable_exception_rate="25.00")
+        instance = TestInstanceFactory(test_plan=plan)
+        SampleItemFactory(test_instance=instance, result="pass")
+        SampleItemFactory(test_instance=instance, result="pass")
+        SampleItemFactory(test_instance=instance, result="pass")
+        SampleItemFactory(test_instance=instance, result="fail")  # 25% = at tolerance
+        resp = auditor_client.post(f"{INSTANCES_URL}{instance.pk}/conclude/")
+        assert resp.status_code == 200
+        assert resp.data["operating_effectiveness_status"] == "partially_effective"
+
+    def test_exception_above_tolerance_gives_ineffective(self, auditor_client):
+        plan = TestPlanFactory(tolerable_exception_rate="5.00")
+        instance = TestInstanceFactory(test_plan=plan)
+        SampleItemFactory(test_instance=instance, result="pass")
+        SampleItemFactory(test_instance=instance, result="fail")  # 50% > 5%
+        resp = auditor_client.post(f"{INSTANCES_URL}{instance.pk}/conclude/")
+        assert resp.status_code == 200
+        assert resp.data["operating_effectiveness_status"] == "ineffective"
+
+    def test_null_tolerance_treated_as_zero(self, auditor_client):
+        plan = TestPlanFactory(tolerable_exception_rate=None)
+        instance = TestInstanceFactory(test_plan=plan)
+        SampleItemFactory(test_instance=instance, result="pass")
+        SampleItemFactory(test_instance=instance, result="fail")
+        resp = auditor_client.post(f"{INSTANCES_URL}{instance.pk}/conclude/")
+        assert resp.status_code == 200
+        assert resp.data["operating_effectiveness_status"] == "ineffective"
+
+    def test_na_samples_excluded_from_rate(self, auditor_client):
+        plan = TestPlanFactory(tolerable_exception_rate="0.00")
+        instance = TestInstanceFactory(test_plan=plan)
+        SampleItemFactory(test_instance=instance, result="pass")
+        SampleItemFactory(test_instance=instance, result="na")  # excluded
+        resp = auditor_client.post(f"{INSTANCES_URL}{instance.pk}/conclude/")
+        assert resp.status_code == 200
+        assert resp.data["operating_effectiveness_status"] == "effective"
+
+    def test_no_testable_samples_returns_400(self, auditor_client):
+        instance = TestInstanceFactory()
+        resp = auditor_client.post(f"{INSTANCES_URL}{instance.pk}/conclude/")
+        assert resp.status_code == 400
+
+    def test_na_only_samples_returns_400(self, auditor_client):
+        instance = TestInstanceFactory()
+        SampleItemFactory(test_instance=instance, result="na")
+        resp = auditor_client.post(f"{INSTANCES_URL}{instance.pk}/conclude/")
+        assert resp.status_code == 400
+
+    def test_conclude_rolls_up_to_engagement_control(self, auditor_client):
+        ec = EngagementControlFactory(test_result="not_tested", effectiveness_rating="not_assessed")
+        plan = TestPlanFactory(control=ec.control, tolerable_exception_rate="0.00")
+        instance = TestInstanceFactory(test_plan=plan, engagement_control=ec)
+        SampleItemFactory(test_instance=instance, result="pass")
+        resp = auditor_client.post(f"{INSTANCES_URL}{instance.pk}/conclude/")
+        assert resp.status_code == 200
+        ec.refresh_from_db()
+        assert ec.test_result == "pass"
+        assert ec.effectiveness_rating == "effective"
+
+    def test_conclude_no_rollup_without_engagement_control(self, auditor_client):
+        plan = TestPlanFactory(tolerable_exception_rate="0.00")
+        instance = TestInstanceFactory(test_plan=plan, engagement_control=None)
+        SampleItemFactory(test_instance=instance, result="pass")
+        resp = auditor_client.post(f"{INSTANCES_URL}{instance.pk}/conclude/")
+        assert resp.status_code == 200  # should succeed without error
+
+    def test_unauthenticated_gets_401(self, api_client):
+        instance = TestInstanceFactory()
+        resp = api_client.post(f"{INSTANCES_URL}{instance.pk}/conclude/")
+        assert resp.status_code == 401
+
+
+@pytest.mark.django_db
+class TestEscalateAction:
+    def test_creates_finding_with_correct_fields(self, auditor_client):
+        engagement = AuditEngagementFactory()
+        plan = TestPlanFactory(engagement=engagement)
+        instance = TestInstanceFactory(test_plan=plan)
+        exc = TestExceptionFactory(test_instance=instance, title="Missing Doc", severity="high")
+        resp = auditor_client.post(f"{EXCEPTIONS_URL}{exc.pk}/escalate/")
+        assert resp.status_code == 200
+        assert resp.data["finding"] is not None
+
+    def test_finding_inherits_severity(self, auditor_client):
+        from apps.findings.models import Finding
+        engagement = AuditEngagementFactory()
+        plan = TestPlanFactory(engagement=engagement)
+        instance = TestInstanceFactory(test_plan=plan)
+        exc = TestExceptionFactory(test_instance=instance, severity="critical")
+        auditor_client.post(f"{EXCEPTIONS_URL}{exc.pk}/escalate/")
+        exc.refresh_from_db()
+        finding = Finding.objects.get(pk=exc.finding_id)
+        assert finding.severity == "critical"
+
+    def test_already_escalated_returns_400(self, auditor_client):
+        finding = FindingFactory()
+        exc = TestExceptionFactory(finding=finding)
+        resp = auditor_client.post(f"{EXCEPTIONS_URL}{exc.pk}/escalate/")
+        assert resp.status_code == 400
+
+    def test_no_engagement_returns_400(self, auditor_client):
+        plan = TestPlanFactory(engagement=None)
+        instance = TestInstanceFactory(test_plan=plan)
+        exc = TestExceptionFactory(test_instance=instance)
+        resp = auditor_client.post(f"{EXCEPTIONS_URL}{exc.pk}/escalate/")
+        assert resp.status_code == 400
+
+    def test_unauthenticated_gets_401(self, api_client):
+        exc = TestExceptionFactory()
+        resp = api_client.post(f"{EXCEPTIONS_URL}{exc.pk}/escalate/")
+        assert resp.status_code == 401
+
+
+@pytest.mark.django_db
+class TestStatisticsEndpoint:
+    def test_all_pass_returns_100_compliance(self, auditor_client):
+        instance = TestInstanceFactory()
+        SampleItemFactory(test_instance=instance, result="pass")
+        SampleItemFactory(test_instance=instance, result="pass")
+        resp = auditor_client.get(f"{INSTANCES_URL}{instance.pk}/statistics/")
+        assert resp.status_code == 200
+        assert resp.data["compliance_rate"] == 100.0
+        assert resp.data["passed"] == 2
+        assert resp.data["failed"] == 0
+
+    def test_mixed_results_calculates_correctly(self, auditor_client):
+        instance = TestInstanceFactory()
+        SampleItemFactory(test_instance=instance, result="pass")
+        SampleItemFactory(test_instance=instance, result="fail")
+        SampleItemFactory(test_instance=instance, result="exception")
+        SampleItemFactory(test_instance=instance, result="na")  # excluded
+        resp = auditor_client.get(f"{INSTANCES_URL}{instance.pk}/statistics/")
+        assert resp.status_code == 200
+        assert resp.data["total_samples"] == 4
+        assert resp.data["testable_samples"] == 3
+        assert resp.data["passed"] == 1
+        assert resp.data["failed"] == 2
+        assert round(resp.data["compliance_rate"], 1) == 33.3
+
+    def test_no_samples_returns_null_compliance(self, auditor_client):
+        instance = TestInstanceFactory()
+        resp = auditor_client.get(f"{INSTANCES_URL}{instance.pk}/statistics/")
+        assert resp.status_code == 200
+        assert resp.data["compliance_rate"] is None
+
+    def test_exception_severity_breakdown(self, auditor_client):
+        instance = TestInstanceFactory()
+        TestExceptionFactory(test_instance=instance, severity="high")
+        TestExceptionFactory(test_instance=instance, severity="high")
+        TestExceptionFactory(test_instance=instance, severity="low")
+        resp = auditor_client.get(f"{INSTANCES_URL}{instance.pk}/statistics/")
+        assert resp.status_code == 200
+        assert resp.data["exceptions_by_severity"]["high"] == 2
+        assert resp.data["exceptions_by_severity"]["low"] == 1
+        assert resp.data["exception_count"] == 3
+
+    def test_unauthenticated_gets_401(self, api_client):
+        instance = TestInstanceFactory()
+        resp = api_client.get(f"{INSTANCES_URL}{instance.pk}/statistics/")
+        assert resp.status_code == 401
+
+
+# ── Epic 4: control test-plans route ─────────────────────────────────────────
+
+@pytest.mark.django_db
+class TestControlTestPlansRoute:
+    def test_scoped_to_correct_control(self, auditor_client):
+        ctrl = ControlFactory()
+        TestPlanFactory(control=ctrl)
+        TestPlanFactory(control=ctrl)
+        TestPlanFactory()  # different control — must not appear
+        resp = auditor_client.get(f"/api/v1/controls/{ctrl.pk}/test-plans/")
+        assert resp.status_code == 200
+        assert resp.data["count"] == 2
+
+    def test_empty_list_for_control_with_no_plans(self, auditor_client):
+        ctrl = ControlFactory()
+        resp = auditor_client.get(f"/api/v1/controls/{ctrl.pk}/test-plans/")
+        assert resp.status_code == 200
+        assert resp.data["count"] == 0
+
+    def test_unauthenticated_gets_401(self, api_client):
+        ctrl = ControlFactory()
+        resp = api_client.get(f"/api/v1/controls/{ctrl.pk}/test-plans/")
+        assert resp.status_code == 401

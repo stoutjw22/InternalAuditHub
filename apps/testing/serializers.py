@@ -49,6 +49,7 @@ class TestPlanSerializer(serializers.ModelSerializer):
             "assertion_types",
             "population_description", "population_size", "sample_size",
             "sampling_method",
+            "acceptance_criteria", "tolerable_exception_rate", "procedure_template",
             "design_effectiveness_status", "design_effectiveness_display",
             "status", "status_display",
             "planned_by", "planned_date",
@@ -70,20 +71,29 @@ class TestInstanceSerializer(serializers.ModelSerializer):
     )
     exception_count = serializers.IntegerField(source="exceptions.count", read_only=True)
     sample_count = serializers.IntegerField(source="sample_items.count", read_only=True)
+    compliance_rate = serializers.SerializerMethodField()
 
     class Meta:
         model = TestInstance
         fields = (
             "id", "test_plan", "test_plan_name",
+            "engagement_control",
             "instance_number",
             "test_period_start", "test_period_end",
             "performed_by", "performed_by_detail", "performed_at",
             "operating_effectiveness_status", "operating_effectiveness_display",
             "conclusion", "notes",
-            "exception_count", "sample_count",
+            "exception_count", "sample_count", "compliance_rate",
             "created_at", "updated_at",
         )
         read_only_fields = ("id", "created_at", "updated_at")
+
+    def get_compliance_rate(self, obj) -> float | None:
+        items = obj.sample_items.exclude(result="na")
+        total = items.count()
+        if total == 0:
+            return None
+        return round(items.filter(result="pass").count() / total * 100, 1)
 
 
 class SampleItemSerializer(serializers.ModelSerializer):
@@ -95,6 +105,7 @@ class SampleItemSerializer(serializers.ModelSerializer):
             "id", "test_instance",
             "item_identifier", "description",
             "result", "result_display",
+            "tested_date", "population_segment",
             "notes", "evidence",
             "created_at", "updated_at",
         )
@@ -115,6 +126,7 @@ class TestExceptionSerializer(serializers.ModelSerializer):
             "title", "description",
             "exception_type", "exception_type_display",
             "severity", "severity_display",
+            "root_cause",
             "finding",
             "resolution_notes", "resolved_at",
             "resolved_by", "resolved_by_detail",

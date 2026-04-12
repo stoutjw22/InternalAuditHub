@@ -444,3 +444,102 @@ export interface AuditEngagementList extends AuditEngagement {}
 export interface AuditReportList extends AuditReport {}
 // eslint-disable-next-line @typescript-eslint/no-empty-interface
 export interface FindingListItem extends Finding {}
+
+// ── Testing Engine (Epic 4) ───────────────────────────────────────────────────
+
+export interface TestPlan {
+  id: UUID;
+  name: string;
+  description?: string;
+  control: UUID;
+  control_name?: string;
+  engagement?: UUID | null;
+  engagement_name?: string;
+  testing_method?: UUID | null;
+  testing_method_name?: string;
+  assertion_types?: UUID[];
+  status: 'draft' | 'approved' | 'active' | 'completed' | 'cancelled';
+  status_display?: string;
+  design_effectiveness_status: 'not_assessed' | 'effective' | 'partially_effective' | 'ineffective';
+  design_effectiveness_display?: string;
+  sampling_method: 'random' | 'systematic' | 'haphazard' | 'judgmental' | 'stratified';
+  population_description?: string;
+  population_size?: number | null;
+  sample_size?: number | null;
+  acceptance_criteria?: string;
+  tolerable_exception_rate?: string | null;
+  procedure_template?: string;
+  instance_count?: number;
+  planned_by?: UUID | null;
+  planned_date?: ISODate | null;
+  created_by?: UUID;
+  created_at?: ISODateTime;
+  updated_at?: ISODateTime;
+}
+
+export interface TestInstance {
+  id: UUID;
+  test_plan: UUID;
+  test_plan_name?: string;
+  engagement_control?: UUID | null;
+  instance_number: number;
+  test_period_start?: ISODate | null;
+  test_period_end?: ISODate | null;
+  performed_by?: UUID | null;
+  performed_by_detail?: UserListItem;
+  performed_at?: ISODateTime | null;
+  operating_effectiveness_status: 'not_tested' | 'effective' | 'partially_effective' | 'ineffective';
+  operating_effectiveness_display?: string;
+  conclusion?: string;
+  notes?: string;
+  exception_count?: number;
+  sample_count?: number;
+  compliance_rate?: number | null;
+  created_at?: ISODateTime;
+  updated_at?: ISODateTime;
+}
+
+export interface SampleItem {
+  id: UUID;
+  test_instance: UUID;
+  item_identifier: string;
+  description?: string;
+  result: 'not_tested' | 'pass' | 'fail' | 'exception' | 'na';
+  result_display?: string;
+  tested_date?: ISODate | null;
+  population_segment?: string;
+  notes?: string;
+  evidence?: UUID | null;
+  created_at?: ISODateTime;
+  updated_at?: ISODateTime;
+}
+
+export interface TestException {
+  id: UUID;
+  test_instance: UUID;
+  sample_item?: UUID | null;
+  title: string;
+  description: string;
+  exception_type: 'design' | 'operating' | 'data_quality' | 'missing_evidence' | 'other';
+  exception_type_display?: string;
+  severity: 'critical' | 'high' | 'medium' | 'low';
+  severity_display?: string;
+  root_cause?: string;
+  finding?: UUID | null;
+  resolution_notes?: string;
+  resolved_at?: ISODateTime | null;
+  resolved_by?: UUID | null;
+  created_by?: UUID;
+  created_at?: ISODateTime;
+  updated_at?: ISODateTime;
+}
+
+export interface TestInstanceStatistics {
+  total_samples: number;
+  testable_samples: number;
+  passed: number;
+  failed: number;
+  compliance_rate: number | null;
+  exception_count: number;
+  exceptions_by_severity: Record<string, number>;
+}

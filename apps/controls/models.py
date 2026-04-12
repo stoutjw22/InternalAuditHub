@@ -71,6 +71,22 @@ class Control(models.Model):
         blank=True,
         help_text="Internal control ID / framework reference (e.g. ISO 27001 A.9.1.1).",
     )
+    is_key_control = models.BooleanField(
+        default=False,
+        help_text="Whether this is a key control (key controls receive higher testing priority).",
+    )
+    execution_mode = models.CharField(
+        max_length=10,
+        choices=[("manual", "Manual"), ("automated", "Automated"), ("hybrid", "Hybrid")],
+        default="manual",
+        blank=True,
+    )
+    assertions = models.ManyToManyField(
+        "testing.AssertionType",
+        related_name="controls",
+        blank=True,
+        help_text="Audit assertions this control addresses.",
+    )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,

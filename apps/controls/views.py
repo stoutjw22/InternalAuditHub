@@ -88,3 +88,21 @@ class EngagementControlFlatDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = EngagementControl.objects.select_related(
         "control", "control__owner", "engagement_risk", "engagement"
     ).prefetch_related("control__risks")
+
+
+class ControlTestPlanListView(generics.ListAPIView):
+    """Test plans scoped to a specific control."""
+
+    permission_classes = [IsAuditorOrAbove]
+
+    def get_serializer_class(self):
+        from apps.testing.serializers import TestPlanSerializer
+        return TestPlanSerializer
+
+    def get_queryset(self):
+        from apps.testing.models import TestPlan
+        return TestPlan.objects.filter(
+            control_id=self.kwargs["pk"]
+        ).select_related(
+            "control", "engagement", "testing_method", "planned_by", "created_by"
+        ).prefetch_related("assertion_types")

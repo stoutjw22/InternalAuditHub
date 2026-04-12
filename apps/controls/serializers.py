@@ -10,6 +10,7 @@ class ControlSerializer(serializers.ModelSerializer):
     control_type_display = serializers.CharField(source="get_control_type_display", read_only=True)
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     frequency_display = serializers.CharField(source="get_frequency_display", read_only=True)
+    execution_mode_display = serializers.CharField(source="get_execution_mode_display", read_only=True)
     risk_count = serializers.IntegerField(source="risks.count", read_only=True)
     first_risk_id = serializers.SerializerMethodField()
     first_risk_name = serializers.SerializerMethodField()
@@ -21,6 +22,9 @@ class ControlSerializer(serializers.ModelSerializer):
             "control_type", "control_type_display",
             "frequency", "frequency_display",
             "status", "status_display",
+            "is_key_control",
+            "execution_mode", "execution_mode_display",
+            "assertions",
             "owner", "owner_detail",
             "business_process",
             "risks", "risk_count",

@@ -127,3 +127,38 @@ class TestEngagementControlModel:
         for rating in ("effective", "partially_effective", "ineffective", "not_assessed"):
             ec = EngagementControlFactory(effectiveness_rating=rating)
             assert ec.effectiveness_rating == rating
+
+
+# ── Epic 4: new Control fields ─────────────────────────────────────────────────
+
+@pytest.mark.django_db
+class TestControlNewFields:
+    def test_is_key_control_defaults_false(self):
+        control = ControlFactory()
+        assert control.is_key_control is False
+
+    def test_can_mark_as_key_control(self):
+        control = ControlFactory(is_key_control=True)
+        assert control.is_key_control is True
+
+    def test_execution_mode_defaults_manual(self):
+        control = ControlFactory()
+        assert control.execution_mode == "manual"
+
+    def test_execution_mode_choices(self):
+        for mode in ("manual", "automated", "hybrid"):
+            control = ControlFactory(execution_mode=mode)
+            assert control.execution_mode == mode
+
+    def test_assertions_m2m_is_empty_by_default(self):
+        from conftest import AssertionTypeFactory
+        control = ControlFactory()
+        assert control.assertions.count() == 0
+
+    def test_can_add_assertions(self):
+        from conftest import AssertionTypeFactory
+        control = ControlFactory()
+        at1 = AssertionTypeFactory()
+        at2 = AssertionTypeFactory()
+        control.assertions.add(at1, at2)
+        assert control.assertions.count() == 2
