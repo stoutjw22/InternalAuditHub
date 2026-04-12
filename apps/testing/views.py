@@ -1,4 +1,8 @@
-from rest_framework import generics
+from django.shortcuts import get_object_or_404
+from django.utils import timezone
+from rest_framework import generics, status
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from apps.accounts.permissions import IsAuditManagerOrAbove, IsAuditorOrAbove
 
@@ -177,3 +181,211 @@ class TestExceptionDetailView(generics.RetrieveUpdateDestroyAPIView):
         if self.request.method in ("PUT", "PATCH", "DELETE"):
             return [IsAuditorOrAbove()]
         return [IsAuditorOrAbove()]
+
+
+# ── Nested convenience routes ──────────────────────────────────────────────────
+
+class TestPlanInstanceListCreateView(generics.ListCreateAPIView):
+    """Test instances scoped to a specific test plan."""
+
+    serializer_class = TestInstanceSerializer
+    permission_classes = [IsAuditorOrAbove]
+
+    def get_queryset(self):
+        return TestInstance.objects.filter(
+            test_plan_id=self.kwargs["pk"]
+        ).select_related("test_plan", "performed_by", "engagement_control")
+
+    def create(self, request, *args, **kwargs):
+        # Inject test_plan from URL so callers don't have to include it in the body.
+        data = request.data.copy()
+        data.setdefault("test_plan", str(self.kwargs["pk"]))
+        serializer = self.get_serializer(data=data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
+    def perform_create(self, serializer):
+        get_object_or_404(TestPlan, pk=self.kwargs["pk"])  # 404 guard
+        serializer.save()
+
+
+class TestInstanceSampleListCreateView(generics.ListCreateAPIView):
+    """Sample items scoped to a specific test instance."""
+
+    serializer_class = SampleItemSerializer
+    permission_classes = [IsAuditorOrAbove]
+
+    def get_queryset(self):
+        return SampleItem.objects.filter(
+            test_instance_id=self.kwargs["pk"]
+        ).select_related("test_instance", "evidence")
+
+    def create(self, request, *args, **kwargs):
+        data = request.data.copy()
+        data.setdefault("test_instance", str(self.kwargs["pk"]))
+        serializer = self.get_serializer(data=data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
+    def perform_create(self, serializer):
+        serializer.save()
+
+
+class TestInstanceExceptionListCreateView(generics.ListCreateAPIView):
+    """Test exceptions scoped to a specific test instance."""
+
+    serializer_class = TestExceptionSerializer
+    permission_classes = [IsAuditorOrAbove]
+
+    def get_queryset(self):
+        return TestException.objects.filter(
+            test_instance_id=self.kwargs["pk"]
+        ).select_related("sample_item", "finding", "resolved_by", "created_by")
+
+    def create(self, request, *args, **kwargs):
+        data = request.data.copy()
+        data.setdefault("test_instance", str(self.kwargs["pk"]))
+        serializer = self.get_serializer(data=data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+
+
+# ── Action endpoints ───────────────────────────────────────────────────────────
+
+class TestInstanceConcludeView(APIView):
+    """
+    Calculate operating effectiveness from sample results and save.
+    Also rolls up to the linked EngagementControl if one is set.
+    """
+
+    permission_classes = [IsAuditorOrAbove]
+
+    def post(self, request, pk):
+        instance = get_object_or_404(
+            TestInstance.objects.select_related("test_plan", "engagement_control"),
+            pk=pk,
+        )
+
+        items = instance.sample_items.exclude(result="na")
+        if not items.exists():
+            return Response(
+                {"error": "No testable sample items to conclude on."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        total = items.count()
+        failed = items.filter(result__in=["fail", "exception"]).count()
+        exception_rate = failed / total * 100
+        tolerable = float(instance.test_plan.tolerable_exception_rate or 0)
+
+        if exception_rate == 0:
+            oe_status = TestInstance.OperatingEffectivenessStatus.EFFECTIVE
+        elif exception_rate <= tolerable:
+            oe_status = TestInstance.OperatingEffectivenessStatus.PARTIALLY_EFFECTIVE
+        else:
+            oe_status = TestInstance.OperatingEffectivenessStatus.INEFFECTIVE
+
+        instance.operating_effectiveness_status = oe_status
+        instance.performed_at = timezone.now()
+        instance.performed_by = request.user
+        instance.save(update_fields=[
+            "operating_effectiveness_status", "performed_at", "performed_by", "updated_at"
+        ])
+
+        instance.rollup_to_engagement_control()
+
+        return Response(
+            TestInstanceSerializer(instance, context={"request": request}).data
+        )
+
+
+class TestExceptionEscalateView(APIView):
+    """
+    Create a formal Finding from a test exception and link the two records.
+    Idempotent: returns 400 if already escalated.
+    """
+
+    permission_classes = [IsAuditorOrAbove]
+
+    def post(self, request, pk):
+        exc = get_object_or_404(
+            TestException.objects.select_related(
+                "test_instance__test_plan__control",
+                "test_instance__test_plan__engagement",
+            ),
+            pk=pk,
+        )
+
+        if exc.finding_id:
+            return Response(
+                {"error": "Already escalated to a finding."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        engagement = exc.test_instance.test_plan.engagement
+        if not engagement:
+            return Response(
+                {"error": "Test plan has no engagement; cannot create Finding."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        from apps.findings.models import Finding
+
+        finding = Finding.objects.create(
+            engagement=engagement,
+            title=exc.title,
+            description=exc.description,
+            finding_type="control_deficiency",
+            severity=exc.severity,
+            control=exc.test_instance.test_plan.control,
+            identified_by=request.user,
+            identified_date=timezone.now().date(),
+            created_by=request.user,
+        )
+
+        exc.finding = finding
+        exc.save(update_fields=["finding", "updated_at"])
+
+        return Response(
+            TestExceptionSerializer(exc, context={"request": request}).data
+        )
+
+
+class TestInstanceStatisticsView(APIView):
+    """Aggregate statistics for a test instance (compliance rate, exception counts)."""
+
+    permission_classes = [IsAuditorOrAbove]
+
+    def get(self, request, pk):
+        instance = get_object_or_404(TestInstance, pk=pk)
+
+        from django.db.models import Count
+
+        items = instance.sample_items.all()
+        testable = items.exclude(result="na")
+        total = testable.count()
+        passed = testable.filter(result="pass").count()
+
+        exc_by_sev = {
+            row["severity"]: row["n"]
+            for row in instance.exceptions.values("severity").annotate(n=Count("id"))
+        }
+
+        return Response({
+            "total_samples": items.count(),
+            "testable_samples": total,
+            "passed": passed,
+            "failed": testable.filter(result__in=["fail", "exception"]).count(),
+            "compliance_rate": round(passed / total * 100, 1) if total else None,
+            "exception_count": instance.exceptions.count(),
+            "exceptions_by_severity": exc_by_sev,
+        })

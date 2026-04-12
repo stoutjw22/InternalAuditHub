@@ -16,6 +16,7 @@ import {
   FileText,
   ChevronRight,
   History,
+  FlaskConical,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
@@ -27,6 +28,7 @@ const navItems = [
   { path: '/engagements', label: 'Engagements', icon: FileCheck },
   { path: '/risks', label: 'Risks', icon: AlertTriangle },
   { path: '/controls', label: 'Controls', icon: Shield },
+  { path: '/testing', label: 'Testing', icon: FlaskConical },
   { path: '/findings', label: 'Findings', icon: Search },
   { path: '/approvals', label: 'Approvals', icon: ClipboardCheck },
   { path: '/users', label: 'Users', icon: Users },

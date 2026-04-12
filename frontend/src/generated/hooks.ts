@@ -33,6 +33,11 @@ import type {
   RemediationAction,
   Risk,
   RiskOwner,
+  SampleItem,
+  TestException,
+  TestInstance,
+  TestInstanceStatistics,
+  TestPlan,
   UserListItem,
   UserProfile,
 } from "./models";
@@ -117,6 +122,15 @@ export const QK = {
   reports: (params?: object) => ["reports", params] as const,
   report: (id: string) => ["reports", id] as const,
   engagementReports: (engId: string) => ["engagements", engId, "reports"] as const,
+  // Testing (Epic 4)
+  testPlans: (params?: object) => ["test-plans", params] as const,
+  testPlan: (id: string) => ["test-plans", id] as const,
+  controlTestPlans: (controlId: string) => ["controls", controlId, "test-plans"] as const,
+  testInstances: (planId: string) => ["test-plans", planId, "instances"] as const,
+  testInstance: (id: string) => ["test-instances", id] as const,
+  testInstanceStats: (id: string) => ["test-instances", id, "statistics"] as const,
+  sampleItems: (instanceId: string) => ["test-instances", instanceId, "samples"] as const,
+  testExceptions: (instanceId: string) => ["test-instances", instanceId, "exceptions"] as const,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1253,3 +1267,247 @@ export const useCreateEngagementRisk    = useAddEngagementRisk;
 export const useDeleteEngagementRisk    = useRemoveEngagementRisk;
 export const useCreateEngagementControl = useAddEngagementControl;
 export const useDeleteEngagementControl = useRemoveEngagementControl;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TESTING ENGINE (Epic 4)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function useTestPlanList(params?: Record<string, unknown>) {
+  return useQuery({
+    queryKey: QK.testPlans(params),
+    queryFn: async () => {
+      const r = await get<PaginatedResponse<TestPlan> | TestPlan[]>("/test-plans/", params);
+      return unwrap(r);
+    },
+  });
+}
+
+export function useTestPlan(id: string) {
+  return useQuery({
+    queryKey: QK.testPlan(id),
+    queryFn: () => get<TestPlan>(`/test-plans/${id}/`),
+    enabled: !!id,
+  });
+}
+
+export function useControlTestPlanList(controlId: string) {
+  return useQuery({
+    queryKey: QK.controlTestPlans(controlId),
+    queryFn: async () => {
+      const r = await get<PaginatedResponse<TestPlan> | TestPlan[]>(`/controls/${controlId}/test-plans/`);
+      return unwrap(r);
+    },
+    enabled: !!controlId,
+  });
+}
+
+export function useCreateTestPlan() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: Partial<TestPlan>) => post<TestPlan>("/test-plans/", data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["test-plans"] }); },
+  });
+}
+
+export function useUpdateTestPlan() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<TestPlan> }) =>
+      patch<TestPlan>(`/test-plans/${id}/`, data),
+    onSuccess: (_, { id }) => {
+      qc.invalidateQueries({ queryKey: ["test-plans"] });
+      qc.invalidateQueries({ queryKey: QK.testPlan(id) });
+    },
+  });
+}
+
+export function useDeleteTestPlan() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => del(`/test-plans/${id}/`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["test-plans"] }); },
+  });
+}
+
+export function useTestInstanceList(planId: string) {
+  return useQuery({
+    queryKey: QK.testInstances(planId),
+    queryFn: async () => {
+      const r = await get<PaginatedResponse<TestInstance> | TestInstance[]>(`/test-plans/${planId}/instances/`);
+      return unwrap(r);
+    },
+    enabled: !!planId,
+  });
+}
+
+export function useTestInstance(id: string) {
+  return useQuery({
+    queryKey: QK.testInstance(id),
+    queryFn: () => get<TestInstance>(`/test-instances/${id}/`),
+    enabled: !!id,
+  });
+}
+
+export function useCreateTestInstance(planId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: Partial<TestInstance>) =>
+      post<TestInstance>(`/test-plans/${planId}/instances/`, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: QK.testInstances(planId) });
+      qc.invalidateQueries({ queryKey: QK.testPlan(planId) });
+    },
+  });
+}
+
+export function useUpdateTestInstance() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<TestInstance> }) =>
+      patch<TestInstance>(`/test-instances/${id}/`, data),
+    onSuccess: (result) => {
+      qc.invalidateQueries({ queryKey: QK.testInstance(result.id) });
+      qc.invalidateQueries({ queryKey: QK.testInstances(result.test_plan as string) });
+    },
+  });
+}
+
+export function useDeleteTestInstance() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, planId }: { id: string; planId: string }) =>
+      del(`/test-instances/${id}/`),
+    onSuccess: (_, { planId }) => {
+      qc.invalidateQueries({ queryKey: QK.testInstances(planId) });
+    },
+  });
+}
+
+export function useConcludeTestInstance() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => post<TestInstance>(`/test-instances/${id}/conclude/`, {}),
+    onSuccess: (result) => {
+      qc.invalidateQueries({ queryKey: QK.testInstance(result.id) });
+      qc.invalidateQueries({ queryKey: QK.testInstances(result.test_plan as string) });
+      qc.invalidateQueries({ queryKey: QK.testInstanceStats(result.id) });
+    },
+  });
+}
+
+export function useTestInstanceStatistics(instanceId: string) {
+  return useQuery({
+    queryKey: QK.testInstanceStats(instanceId),
+    queryFn: () => get<TestInstanceStatistics>(`/test-instances/${instanceId}/statistics/`),
+    enabled: !!instanceId,
+  });
+}
+
+export function useSampleItemList(instanceId: string) {
+  return useQuery({
+    queryKey: QK.sampleItems(instanceId),
+    queryFn: async () => {
+      const r = await get<PaginatedResponse<SampleItem> | SampleItem[]>(
+        `/test-instances/${instanceId}/samples/`
+      );
+      return unwrap(r);
+    },
+    enabled: !!instanceId,
+  });
+}
+
+export function useCreateSampleItem(instanceId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: Partial<SampleItem>) =>
+      post<SampleItem>(`/test-instances/${instanceId}/samples/`, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: QK.sampleItems(instanceId) });
+      qc.invalidateQueries({ queryKey: QK.testInstance(instanceId) });
+      qc.invalidateQueries({ queryKey: QK.testInstanceStats(instanceId) });
+    },
+  });
+}
+
+export function useUpdateSampleItem(instanceId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<SampleItem> }) =>
+      patch<SampleItem>(`/sample-items/${id}/`, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: QK.sampleItems(instanceId) });
+      qc.invalidateQueries({ queryKey: QK.testInstanceStats(instanceId) });
+    },
+  });
+}
+
+export function useDeleteSampleItem(instanceId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => del(`/sample-items/${id}/`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: QK.sampleItems(instanceId) });
+      qc.invalidateQueries({ queryKey: QK.testInstance(instanceId) });
+      qc.invalidateQueries({ queryKey: QK.testInstanceStats(instanceId) });
+    },
+  });
+}
+
+export function useTestExceptionList(instanceId: string) {
+  return useQuery({
+    queryKey: QK.testExceptions(instanceId),
+    queryFn: async () => {
+      const r = await get<PaginatedResponse<TestException> | TestException[]>(
+        `/test-instances/${instanceId}/exceptions/`
+      );
+      return unwrap(r);
+    },
+    enabled: !!instanceId,
+  });
+}
+
+export function useCreateTestException(instanceId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: Partial<TestException>) =>
+      post<TestException>(`/test-instances/${instanceId}/exceptions/`, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: QK.testExceptions(instanceId) });
+      qc.invalidateQueries({ queryKey: QK.testInstance(instanceId) });
+      qc.invalidateQueries({ queryKey: QK.testInstanceStats(instanceId) });
+    },
+  });
+}
+
+export function useUpdateTestException(instanceId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<TestException> }) =>
+      patch<TestException>(`/test-exceptions/${id}/`, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: QK.testExceptions(instanceId) });
+    },
+  });
+}
+
+export function useDeleteTestException(instanceId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => del(`/test-exceptions/${id}/`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: QK.testExceptions(instanceId) });
+      qc.invalidateQueries({ queryKey: QK.testInstance(instanceId) });
+      qc.invalidateQueries({ queryKey: QK.testInstanceStats(instanceId) });
+    },
+  });
+}
+
+export function useEscalateTestException(instanceId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => post<TestException>(`/test-exceptions/${id}/escalate/`, {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: QK.testExceptions(instanceId) });
+    },
+  });
+}

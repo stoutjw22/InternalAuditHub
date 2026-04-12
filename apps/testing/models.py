@@ -163,6 +163,21 @@ class TestPlan(models.Model):
         default=PlanStatus.DRAFT,
         db_index=True,
     )
+    acceptance_criteria = models.TextField(
+        blank=True,
+        help_text="What constitutes a pass or fail for this test plan.",
+    )
+    tolerable_exception_rate = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Max acceptable exception rate as a percentage (e.g. 5.00). Null = zero tolerance.",
+    )
+    procedure_template = models.TextField(
+        blank=True,
+        help_text="Standard test steps to be followed during execution.",
+    )
     planned_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -249,6 +264,14 @@ class TestInstance(models.Model):
         db_index=True,
         help_text="Overall conclusion on whether the control operated effectively.",
     )
+    engagement_control = models.ForeignKey(
+        "controls.EngagementControl",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="test_instances",
+        help_text="The engagement control record this instance rolls up to.",
+    )
     conclusion = models.TextField(
         blank=True,
         help_text="Narrative conclusion of the test instance.",
@@ -269,6 +292,28 @@ class TestInstance(models.Model):
 
     def __str__(self) -> str:
         return f"{self.test_plan.name} — Run #{self.instance_number}"
+
+    def rollup_to_engagement_control(self) -> None:
+        """Push this instance's conclusion back to the linked EngagementControl."""
+        if not self.engagement_control_id:
+            return
+        STATUS_MAP = {
+            "effective": ("pass", "effective"),
+            "partially_effective": ("partial", "partially_effective"),
+            "ineffective": ("fail", "ineffective"),
+            "not_tested": ("not_tested", "not_assessed"),
+        }
+        test_result, effectiveness_rating = STATUS_MAP.get(
+            self.operating_effectiveness_status, ("not_tested", "not_assessed")
+        )
+        ec = self.engagement_control
+        ec.test_result = test_result
+        ec.effectiveness_rating = effectiveness_rating
+        ec.tested_by = self.performed_by
+        ec.tested_at = self.performed_at
+        ec.save(update_fields=[
+            "test_result", "effectiveness_rating", "tested_by", "tested_at", "updated_at"
+        ])
 
 
 class SampleItem(models.Model):
@@ -302,6 +347,16 @@ class SampleItem(models.Model):
         db_index=True,
     )
     notes = models.TextField(blank=True)
+    tested_date = models.DateField(
+        null=True,
+        blank=True,
+        help_text="Date this specific sample item was tested.",
+    )
+    population_segment = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="Stratum label for stratified sampling (e.g. 'High Value', 'Q1').",
+    )
     evidence = models.ForeignKey(
         "findings.Evidence",
         on_delete=models.SET_NULL,
@@ -368,6 +423,20 @@ class TestException(models.Model):
         choices=ExceptionSeverity.choices,
         default=ExceptionSeverity.MEDIUM,
         db_index=True,
+    )
+    root_cause = models.CharField(
+        max_length=20,
+        choices=[
+            ("process", "Process"),
+            ("system", "System"),
+            ("people", "People"),
+            ("control_design", "Control Design"),
+            ("data", "Data"),
+            ("external", "External"),
+            ("other", "Other"),
+        ],
+        blank=True,
+        default="",
     )
     finding = models.ForeignKey(
         "findings.Finding",

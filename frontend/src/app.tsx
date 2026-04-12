@@ -21,6 +21,9 @@ const AuditorDashboardPage = lazy(() => import("@/pages/auditor-dashboard"));
 const ManagerDashboardPage = lazy(() => import("@/pages/manager-dashboard"));
 const NotificationsPage = lazy(() => import("@/pages/notifications"));
 const NotFoundPage = lazy(() => import("@/pages/not-found"));
+const TestingPage = lazy(() => import("@/pages/testing"));
+const TestPlanDetailPage = lazy(() => import("@/pages/testing-plan-detail"));
+const TestInstancePage = lazy(() => import("@/pages/testing-instance"));
 
 function PageLoader() {
   return (
@@ -50,6 +53,9 @@ function ProtectedRoutes() {
           <Route path="dashboard/auditor" element={<AuditorDashboardPage />} />
           <Route path="dashboard/manager" element={<ManagerDashboardPage />} />
           <Route path="notifications" element={<NotificationsPage />} />
+          <Route path="testing" element={<TestingPage />} />
+          <Route path="testing/:planId" element={<TestPlanDetailPage />} />
+          <Route path="testing/:planId/instances/:instanceId" element={<TestInstancePage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </Suspense>
