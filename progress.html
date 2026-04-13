@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>InternalAuditHub — Build Progress</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #22263a;
+      --border: #2e3350;
+      --accent: #4f6ef7;
+      --accent2: #7c3aed;
+      --green: #22c55e;
+      --amber: #f59e0b;
+      --red: #ef4444;
+      --cyan: #06b6d4;
+      --pink: #ec4899;
+      --text: #e2e8f0;
+      --muted: #64748b;
+      --radius: 10px;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      line-height: 1.6;
+      padding: 2rem 1rem;
+    }
+
+    .container { max-width: 1200px; margin: 0 auto; }
+
+    /* Header */
+    .header {
+      text-align: center;
+      margin-bottom: 3rem;
+      padding: 3rem 2rem;
+      background: linear-gradient(135deg, #1a1d27 0%, #1e2035 50%, #1a1d27 100%);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      position: relative;
+      overflow: hidden;
+    }
+    .header::before {
+      content: '';
+      position: absolute;
+      top: -60px; left: 50%;
+      transform: translateX(-50%);
+      width: 400px; height: 200px;
+      background: radial-gradient(ellipse, rgba(79,110,247,0.15) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .header-badge {
+      display: inline-block;
+      background: rgba(79,110,247,0.15);
+      border: 1px solid rgba(79,110,247,0.4);
+      color: #818cf8;
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      padding: 0.3rem 0.9rem;
+      border-radius: 100px;
+      margin-bottom: 1rem;
+    }
+    .header h1 {
+      font-size: 2.5rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #e2e8f0 30%, #818cf8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 0.5rem;
+    }
+    .header p {
+      color: var(--muted);
+      font-size: 1.05rem;
+      max-width: 560px;
+      margin: 0 auto 1.5rem;
+    }
+    .header-meta {
+      display: flex;
+      justify-content: center;
+      gap: 2rem;
+      flex-wrap: wrap;
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+    .header-meta span { display: flex; align-items: center; gap: 0.4rem; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+    .dot-green { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    .dot-amber { background: var(--amber); }
+    .dot-blue  { background: var(--accent); }
+
+    /* Stat Cards */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 1rem;
+      margin-bottom: 2.5rem;
+    }
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.25rem 1.5rem;
+      text-align: center;
+      transition: border-color 0.2s;
+    }
+    .stat-card:hover { border-color: var(--accent); }
+    .stat-number {
+      font-size: 2rem;
+      font-weight: 800;
+      line-height: 1;
+      margin-bottom: 0.25rem;
+    }
+    .stat-label { font-size: 0.8rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+
+    /* Section */
+    .section { margin-bottom: 2.5rem; }
+    .section-title {
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 1rem;
+      padding-left: 0.25rem;
+    }
+
+    /* App modules grid */
+    .modules-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 1rem;
+    }
+    .module-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.25rem;
+      transition: border-color 0.2s, transform 0.15s;
+    }
+    .module-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+    .module-header {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 0.75rem;
+    }
+    .module-icon {
+      width: 36px; height: 36px;
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.1rem;
+      flex-shrink: 0;
+    }
+    .module-name { font-weight: 700; font-size: 0.95rem; }
+    .module-desc { font-size: 0.8rem; color: var(--muted); margin-bottom: 0.75rem; }
+    .models-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+    }
+    .model-tag {
+      font-size: 0.72rem;
+      padding: 0.2rem 0.55rem;
+      border-radius: 4px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: #94a3b8;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+    }
+
+    /* Tech stack */
+    .stack-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 1rem;
+    }
+    .stack-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.1rem 1.25rem;
+    }
+    .stack-category {
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 0.6rem;
+    }
+    .stack-items { display: flex; flex-direction: column; gap: 0.35rem; }
+    .stack-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.83rem;
+    }
+    .stack-name { color: var(--text); font-weight: 500; }
+    .stack-version { color: var(--muted); font-family: monospace; font-size: 0.75rem; }
+
+    /* Pages */
+    .pages-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 0.75rem;
+    }
+    .page-item {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 0.9rem 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      font-size: 0.85rem;
+      font-weight: 500;
+      transition: border-color 0.2s;
+    }
+    .page-item:hover { border-color: var(--green); }
+    .page-icon { font-size: 1rem; }
+    .status-pill {
+      margin-left: auto;
+      font-size: 0.65rem;
+      font-weight: 700;
+      padding: 0.15rem 0.5rem;
+      border-radius: 100px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .status-done { background: rgba(34,197,94,0.15); color: #4ade80; border: 1px solid rgba(34,197,94,0.3); }
+    .status-wip  { background: rgba(245,158,11,0.15); color: #fbbf24; border: 1px solid rgba(245,158,11,0.3); }
+
+    /* Roles */
+    .roles-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: 0.75rem;
+    }
+    .role-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 0.9rem 1rem;
+      text-align: center;
+      font-size: 0.83rem;
+    }
+    .role-icon { font-size: 1.4rem; margin-bottom: 0.4rem; }
+    .role-name { font-weight: 600; }
+    .role-desc { font-size: 0.72rem; color: var(--muted); margin-top: 0.25rem; }
+
+    /* Architecture layers */
+    .layers {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    .layer {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 0.9rem 1.25rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    .layer-num {
+      width: 28px; height: 28px;
+      border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.75rem;
+      font-weight: 800;
+      flex-shrink: 0;
+    }
+    .layer-content { flex: 1; }
+    .layer-title { font-weight: 700; font-size: 0.9rem; }
+    .layer-items { font-size: 0.78rem; color: var(--muted); margin-top: 0.15rem; font-family: monospace; }
+
+    /* Footer */
+    .footer {
+      text-align: center;
+      padding: 2rem;
+      color: var(--muted);
+      font-size: 0.8rem;
+      border-top: 1px solid var(--border);
+      margin-top: 2rem;
+    }
+
+    /* Color helpers */
+    .c-blue   { color: var(--accent); }
+    .c-green  { color: var(--green); }
+    .c-amber  { color: var(--amber); }
+    .c-purple { color: var(--accent2); }
+    .c-cyan   { color: var(--cyan); }
+    .c-pink   { color: var(--pink); }
+    .c-red    { color: var(--red); }
+
+    .bg-blue   { background: rgba(79,110,247,0.15); }
+    .bg-green  { background: rgba(34,197,94,0.12); }
+    .bg-amber  { background: rgba(245,158,11,0.12); }
+    .bg-purple { background: rgba(124,58,237,0.15); }
+    .bg-cyan   { background: rgba(6,182,212,0.12); }
+    .bg-pink   { background: rgba(236,72,153,0.12); }
+    .bg-red    { background: rgba(239,68,68,0.12); }
+    .bg-teal   { background: rgba(20,184,166,0.12); }
+    .bg-orange { background: rgba(249,115,22,0.12); }
+    .bg-sky    { background: rgba(14,165,233,0.12); }
+
+    .br-blue   { border-color: rgba(79,110,247,0.4) !important; }
+    .br-green  { border-color: rgba(34,197,94,0.4) !important; }
+    .br-amber  { border-color: rgba(245,158,11,0.4) !important; }
+    .br-purple { border-color: rgba(124,58,237,0.4) !important; }
+    .br-cyan   { border-color: rgba(6,182,212,0.4) !important; }
+    .br-pink   { border-color: rgba(236,72,153,0.4) !important; }
+    .br-red    { border-color: rgba(239,68,68,0.4) !important; }
+    .br-teal   { border-color: rgba(20,184,166,0.4) !important; }
+    .br-orange { border-color: rgba(249,115,22,0.4) !important; }
+    .br-sky    { border-color: rgba(14,165,233,0.4) !important; }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-badge">Internal Audit Platform</div>
+    <h1>InternalAuditHub</h1>
+    <p>Enterprise-grade audit lifecycle management — from planning & risk through controls, testing, findings, and reporting.</p>
+    <div class="header-meta">
+      <span><span class="dot dot-green"></span> Django 5.0 + DRF backend</span>
+      <span><span class="dot dot-blue"></span> React 18 + TypeScript frontend</span>
+      <span><span class="dot dot-amber"></span> PostgreSQL database</span>
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-number c-blue">11</div>
+      <div class="stat-label">Django Apps</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number c-green">38</div>
+      <div class="stat-label">Data Models</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number c-purple">14</div>
+      <div class="stat-label">UI Pages</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number c-cyan">7</div>
+      <div class="stat-label">User Roles</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number c-amber">20+</div>
+      <div class="stat-label">UI Components</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number c-pink">REST</div>
+      <div class="stat-label">API + OpenAPI</div>
+    </div>
+  </div>
+
+  <!-- Backend Modules -->
+  <div class="section">
+    <div class="section-title">Backend — Django Apps (11)</div>
+    <div class="modules-grid">
+
+      <div class="module-card br-blue">
+        <div class="module-header">
+          <div class="module-icon bg-blue"><span>👤</span></div>
+          <div>
+            <div class="module-name c-blue">accounts</div>
+          </div>
+        </div>
+        <div class="module-desc">Custom user model, RBAC, Azure AD / Entra ID SSO, JWT auth, brute-force lockout</div>
+        <div class="models-list"><span class="model-tag">User</span><span class="model-tag">UserRole</span></div>
+      </div>
+
+      <div class="module-card br-teal">
+        <div class="module-header">
+          <div class="module-icon bg-teal"><span>🔧</span></div>
+          <div>
+            <div class="module-name" style="color:#2dd4bf">core</div>
+          </div>
+        </div>
+        <div class="module-desc">Shared foundations — business processes, objectives, immutable audit trail, middleware</div>
+        <div class="models-list">
+          <span class="model-tag">BusinessProcess</span>
+          <span class="model-tag">BusinessObjective</span>
+          <span class="model-tag">AuditLog</span>
+        </div>
+      </div>
+
+      <div class="module-card br-orange">
+        <div class="module-header">
+          <div class="module-icon bg-orange"><span>⚠️</span></div>
+          <div><div class="module-name c-amber">risks</div></div>
+        </div>
+        <div class="module-desc">Enterprise risk register with configurable likelihood × impact scoring matrices</div>
+        <div class="models-list">
+          <span class="model-tag">Risk</span>
+          <span class="model-tag">RiskScoringConfig</span>
+        </div>
+      </div>
+
+      <div class="module-card br-purple">
+        <div class="module-header">
+          <div class="module-icon bg-purple"><span>🛡️</span></div>
+          <div><div class="module-name c-purple">controls</div></div>
+        </div>
+        <div class="module-desc">Internal control library — design, testing, documentation, and risk mapping</div>
+        <div class="models-list">
+          <span class="model-tag">Control</span>
+          <span class="model-tag">ControlActivity</span>
+        </div>
+      </div>
+
+      <div class="module-card br-blue">
+        <div class="module-header">
+          <div class="module-icon bg-blue"><span>📋</span></div>
+          <div><div class="module-name c-blue">engagements</div></div>
+        </div>
+        <div class="module-desc">Full audit engagement lifecycle — planning, phases, team assignments, status tracking</div>
+        <div class="models-list">
+          <span class="model-tag">AuditEngagement</span>
+          <span class="model-tag">AuditPhase</span>
+          <span class="model-tag">EngagementAuditor</span>
+        </div>
+      </div>
+
+      <div class="module-card br-red">
+        <div class="module-header">
+          <div class="module-icon bg-red"><span>🔍</span></div>
+          <div><div class="module-name c-red">findings</div></div>
+        </div>
+        <div class="module-desc">Issue tracking with severity, evidence uploads, remediation actions, approval workflows</div>
+        <div class="models-list">
+          <span class="model-tag">Finding</span>
+          <span class="model-tag">RemediationAction</span>
+          <span class="model-tag">Evidence</span>
+          <span class="model-tag">ApprovalRequest</span>
+        </div>
+      </div>
+
+      <div class="module-card br-green">
+        <div class="module-header">
+          <div class="module-icon bg-green"><span>📊</span></div>
+          <div><div class="module-name c-green">reports</div></div>
+        </div>
+        <div class="module-desc">Audit report generation with versioned templates and status tracking</div>
+        <div class="models-list">
+          <span class="model-tag">AuditReport</span>
+          <span class="model-tag">ReportTemplate</span>
+        </div>
+      </div>
+
+      <div class="module-card br-cyan">
+        <div class="module-header">
+          <div class="module-icon bg-cyan"><span>🌐</span></div>
+          <div><div class="module-name c-cyan">universe</div></div>
+        </div>
+        <div class="module-desc">Hierarchical auditable domain structure — domains, entities, and subprocesses</div>
+        <div class="models-list">
+          <span class="model-tag">AuditableDomain</span>
+          <span class="model-tag">AuditableEntity</span>
+          <span class="model-tag">Subprocess</span>
+        </div>
+      </div>
+
+      <div class="module-card br-amber">
+        <div class="module-header">
+          <div class="module-icon bg-amber"><span>🏷️</span></div>
+          <div><div class="module-name c-amber">taxonomy</div></div>
+        </div>
+        <div class="module-desc">Configurable risk taxonomy — categories, subcategories, and scoring matrix configs (3×3, 5×5)</div>
+        <div class="models-list">
+          <span class="model-tag">RiskCategory</span>
+          <span class="model-tag">RiskSubcategory</span>
+          <span class="model-tag">RiskScoringConfig</span>
+        </div>
+      </div>
+
+      <div class="module-card br-pink">
+        <div class="module-header">
+          <div class="module-icon bg-pink"><span>📚</span></div>
+          <div><div class="module-name c-pink">frameworks</div></div>
+        </div>
+        <div class="module-desc">Versioned compliance framework library (COSO, SOX, ISO 27001…) with control-requirement mapping</div>
+        <div class="models-list">
+          <span class="model-tag">Framework</span>
+          <span class="model-tag">FrameworkRequirement</span>
+          <span class="model-tag">CitationSource</span>
+          <span class="model-tag">ControlObjective</span>
+          <span class="model-tag">ControlReqMapping</span>
+        </div>
+      </div>
+
+      <div class="module-card br-sky">
+        <div class="module-header">
+          <div class="module-icon bg-sky"><span>⚖️</span></div>
+          <div><div class="module-name" style="color:#38bdf8">jurisdictions</div></div>
+        </div>
+        <div class="module-desc">Jurisdiction-specific regulatory overlays with condition-driven applicability logic</div>
+        <div class="models-list">
+          <span class="model-tag">Jurisdiction</span>
+          <span class="model-tag">RequirementOverlay</span>
+          <span class="model-tag">ApplicabilityLogic</span>
+        </div>
+      </div>
+
+      <div class="module-card" style="border-color:rgba(45,212,191,0.4)">
+        <div class="module-header">
+          <div class="module-icon bg-teal"><span>🧪</span></div>
+          <div><div class="module-name" style="color:#2dd4bf">testing</div></div>
+        </div>
+        <div class="module-desc">Design & operating effectiveness testing — test plans, instances, sample items, exceptions</div>
+        <div class="models-list">
+          <span class="model-tag">TestPlan</span>
+          <span class="model-tag">TestInstance</span>
+          <span class="model-tag">SampleItem</span>
+          <span class="model-tag">TestException</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Frontend Pages -->
+  <div class="section">
+    <div class="section-title">Frontend — React Pages (14)</div>
+    <div class="pages-grid">
+      <div class="page-item"><span class="page-icon">🏠</span> Dashboard <span class="status-pill status-done">Done</span></div>
+      <div class="page-item"><span class="page-icon">📋</span> Engagements <span class="status-pill status-done">Done</span></div>
+      <div class="page-item"><span class="page-icon">⚠️</span> Risks <span class="status-pill status-done">Done</span></div>
+      <div class="page-item"><span class="page-icon">🛡️</span> Controls <span class="status-pill status-done">Done</span></div>
+      <div class="page-item"><span class="page-icon">🔍</span> Findings <span class="status-pill status-done">Done</span></div>
+      <div class="page-item"><span class="page-icon">✅</span> Approvals <span class="status-pill status-done">Done</span></div>
+      <div class="page-item"><span class="page-icon">🧪</span> Testing <span class="status-pill status-done">Done</span></div>
+      <div class="page-item"><span class="page-icon">📊</span> Reports <span class="status-pill status-done">Done</span></div>
+      <div class="page-item"><span class="page-icon">👥</span> Users <span class="status-pill status-done">Done</span></div>
+      <div class="page-item"><span class="page-icon">👷</span> Auditor Dashboard <span class="status-pill status-done">Done</span></div>
+      <div class="page-item"><span class="page-icon">🗂️</span> Manager Dashboard <span class="status-pill status-done">Done</span></div>
+      <div class="page-item"><span class="page-icon">🔔</span> Notifications <span class="status-pill status-done">Done</span></div>
+      <div class="page-item"><span class="page-icon">📜</span> Audit Trail <span class="status-pill status-done">Done</span></div>
+      <div class="page-item"><span class="page-icon">📄</span> Report Templates <span class="status-pill status-done">Done</span></div>
+    </div>
+  </div>
+
+  <!-- Two-column: Roles + Tech Stack -->
+  <div style="display:grid; grid-template-columns: 1fr 1fr; gap:2.5rem; margin-bottom:2.5rem;">
+
+    <!-- Roles -->
+    <div>
+      <div class="section-title">User Roles (7)</div>
+      <div class="roles-grid">
+        <div class="role-card"><div class="role-icon">👑</div><div class="role-name c-red">Admin</div><div class="role-desc">Full system access</div></div>
+        <div class="role-card"><div class="role-icon">🗂️</div><div class="role-name c-purple">Audit Manager</div><div class="role-desc">Oversight + approvals</div></div>
+        <div class="role-card"><div class="role-icon">🔎</div><div class="role-name c-blue">Auditor</div><div class="role-desc">Testing + findings</div></div>
+        <div class="role-card"><div class="role-icon">⚠️</div><div class="role-name c-amber">Risk Owner</div><div class="role-desc">Risk assessment</div></div>
+        <div class="role-card"><div class="role-icon">🛡️</div><div class="role-name c-cyan">Control Owner</div><div class="role-desc">Control design</div></div>
+        <div class="role-card"><div class="role-icon">🔧</div><div class="role-name c-green">Finding Owner</div><div class="role-desc">Remediation</div></div>
+        <div class="role-card"><div class="role-icon">👁️</div><div class="role-name" style="color:#94a3b8">Read Only</div><div class="role-desc">View access</div></div>
+      </div>
+    </div>
+
+    <!-- Tech Stack -->
+    <div>
+      <div class="section-title">Tech Stack</div>
+      <div class="stack-grid">
+        <div class="stack-card">
+          <div class="stack-category">Backend</div>
+          <div class="stack-items">
+            <div class="stack-item"><span class="stack-name c-green">Django</span><span class="stack-version">5.0.9</span></div>
+            <div class="stack-item"><span class="stack-name">DRF</span><span class="stack-version">3.15.2</span></div>
+            <div class="stack-item"><span class="stack-name">drf-spectacular</span><span class="stack-version">OpenAPI 3</span></div>
+            <div class="stack-item"><span class="stack-name">simplejwt</span><span class="stack-version">JWT auth</span></div>
+            <div class="stack-item"><span class="stack-name">django-allauth</span><span class="stack-version">Azure AD SSO</span></div>
+            <div class="stack-item"><span class="stack-name">django-axes</span><span class="stack-version">lockout</span></div>
+          </div>
+        </div>
+        <div class="stack-card">
+          <div class="stack-category">Frontend</div>
+          <div class="stack-items">
+            <div class="stack-item"><span class="stack-name c-cyan">React</span><span class="stack-version">18.2</span></div>
+            <div class="stack-item"><span class="stack-name">TypeScript</span><span class="stack-version">5.3</span></div>
+            <div class="stack-item"><span class="stack-name">Vite</span><span class="stack-version">5.1.6</span></div>
+            <div class="stack-item"><span class="stack-name">Tailwind CSS</span><span class="stack-version">3.4</span></div>
+            <div class="stack-item"><span class="stack-name">Radix UI</span><span class="stack-version">13+ components</span></div>
+            <div class="stack-item"><span class="stack-name">TanStack Query</span><span class="stack-version">5.28</span></div>
+            <div class="stack-item"><span class="stack-name">React Router</span><span class="stack-version">v6</span></div>
+            <div class="stack-item"><span class="stack-name">Framer Motion</span><span class="stack-version">11 / 12</span></div>
+            <div class="stack-item"><span class="stack-name">Jotai</span><span class="stack-version">state mgmt</span></div>
+            <div class="stack-item"><span class="stack-name">Zod + RHF</span><span class="stack-version">validation</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Domain Architecture Layers -->
+  <div class="section">
+    <div class="section-title">Domain Architecture — 6 Layers</div>
+    <div class="layers">
+      <div class="layer">
+        <div class="layer-num bg-teal" style="color:#2dd4bf">1</div>
+        <div class="layer-content">
+          <div class="layer-title">Foundations</div>
+          <div class="layer-items">User · BusinessProcess · BusinessObjective · AuditLog</div>
+        </div>
+      </div>
+      <div class="layer">
+        <div class="layer-num bg-blue" style="color:#818cf8">2</div>
+        <div class="layer-content">
+          <div class="layer-title">Auditable Universe</div>
+          <div class="layer-items">AuditableDomain → AuditableEntity → Subprocess (hierarchical)</div>
+        </div>
+      </div>
+      <div class="layer">
+        <div class="layer-num bg-amber" style="color:#fbbf24">3</div>
+        <div class="layer-content">
+          <div class="layer-title">Risk Taxonomy</div>
+          <div class="layer-items">RiskCategory → RiskSubcategory · RiskScoringConfig (3×3, 5×5, weighted)</div>
+        </div>
+      </div>
+      <div class="layer">
+        <div class="layer-num bg-pink" style="color:#f472b6">4</div>
+        <div class="layer-content">
+          <div class="layer-title">Framework Library</div>
+          <div class="layer-items">Framework (versioned) → FrameworkRequirement · ControlObjective · ControlRequirementMapping</div>
+        </div>
+      </div>
+      <div class="layer">
+        <div class="layer-num" style="background:rgba(45,212,191,0.12);color:#2dd4bf">5</div>
+        <div class="layer-content">
+          <div class="layer-title">Testing Layer</div>
+          <div class="layer-items">TestPlan (design) · TestInstance (operating) · SampleItem · TestException</div>
+        </div>
+      </div>
+      <div class="layer">
+        <div class="layer-num bg-sky" style="color:#38bdf8">6</div>
+        <div class="layer-content">
+          <div class="layer-title">Jurisdiction Overlay</div>
+          <div class="layer-items">Jurisdiction · RequirementOverlay · ApplicabilityLogic (condition-driven, effective-dated)</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- API Info -->
+  <div class="section">
+    <div class="section-title">API Endpoints</div>
+    <div class="stack-grid" style="grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));">
+      <div class="stack-card"><div class="stack-category">Auth</div><div class="stack-items"><div class="stack-item"><span class="stack-name">/api/v1/auth/token/</span></div><div class="stack-item"><span class="stack-name">/api/v1/auth/refresh/</span></div></div></div>
+      <div class="stack-card"><div class="stack-category">Core Resources</div><div class="stack-items"><div class="stack-item"><span class="stack-name">/risks/ · /controls/</span></div><div class="stack-item"><span class="stack-name">/engagements/</span></div><div class="stack-item"><span class="stack-name">/findings/</span></div><div class="stack-item"><span class="stack-name">/reports/</span></div></div></div>
+      <div class="stack-card"><div class="stack-category">Governance</div><div class="stack-items"><div class="stack-item"><span class="stack-name">/frameworks/</span></div><div class="stack-item"><span class="stack-name">/jurisdictions/</span></div><div class="stack-item"><span class="stack-name">/taxonomy/</span></div><div class="stack-item"><span class="stack-name">/universe/</span></div></div></div>
+      <div class="stack-card"><div class="stack-category">Docs</div><div class="stack-items"><div class="stack-item"><span class="stack-name c-blue">/docs/ (Swagger)</span></div><div class="stack-item"><span class="stack-name c-purple">/redoc/ (ReDoc)</span></div><div class="stack-item"><span class="stack-name c-green">/schema/ (OpenAPI)</span></div></div></div>
+    </div>
+  </div>
+
+  <div class="footer">
+    InternalAuditHub &nbsp;·&nbsp; Django 5 + React 18 + TypeScript &nbsp;·&nbsp; Generated 2026-04-13
+  </div>
+
+</div>
+</body>
+</html>
