@@ -56,6 +56,8 @@ LOCAL_APPS = [
     "apps.frameworks",
     "apps.testing",
     "apps.jurisdictions",
+    # 6-Year Integrated Audit Plan
+    "apps.audit_plan",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS

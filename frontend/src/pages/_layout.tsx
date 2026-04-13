@@ -15,11 +15,19 @@ import {
   Bell,
   FileText,
   ChevronRight,
+  ChevronDown,
   History,
   FlaskConical,
+  CalendarRange,
+  Target,
+  ShieldCheck,
+  Star,
+  Upload,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
+import { useAtom } from 'jotai';
+import { currentUserAtom } from '@/lib/auth';
 
 const navItems = [
   { path: '/', label: 'Dashboard', icon: LayoutDashboard },
@@ -36,6 +44,74 @@ const navItems = [
   { path: '/notifications', label: 'Notifications', icon: Bell },
   { path: '/audit-logs', label: 'Audit Trail', icon: History },
 ];
+
+const auditPlanSubItems = [
+  { path: '/audit-plan', label: '6-Year Dashboard', icon: CalendarRange, exact: true },
+  { path: '/audit-plan/grc-themes', label: 'GRC Themes', icon: ShieldCheck },
+  { path: '/audit-plan/risk-scoring', label: 'Risk Scoring Engine', icon: Target },
+  { path: '/audit-plan/year6', label: 'FY2031 MAR Plan', icon: Star },
+  { path: '/audit-plan/import', label: 'Import Plan', icon: Upload, managerOnly: true },
+];
+
+function AuditPlanNavSection({ onNavigate }: { onNavigate?: () => void }) {
+  const location = useLocation();
+  const [user] = useAtom(currentUserAtom);
+  const isAuditPlanActive = location.pathname.startsWith('/audit-plan');
+  const [open, setOpen] = useState(isAuditPlanActive);
+
+  const canImport = user?.role === 'admin' || user?.role === 'audit_manager';
+
+  return (
+    <div>
+      <button
+        className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 ${
+          isAuditPlanActive
+            ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+            : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'
+        }`}
+        onClick={() => setOpen((v) => !v)}
+      >
+        {isAuditPlanActive && (
+          <motion.div
+            layoutId="activeIndicator"
+            className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-sidebar-primary rounded-r-full"
+          />
+        )}
+        <CalendarRange className={`w-5 h-5 shrink-0 ${isAuditPlanActive ? 'text-sidebar-primary' : ''}`} />
+        <span className="font-medium flex-1 text-left">Audit Plan</span>
+        {open
+          ? <ChevronDown className="w-4 h-4 opacity-60" />
+          : <ChevronRight className="w-4 h-4 opacity-60" />}
+      </button>
+
+      {open && (
+        <div className="ml-4 mt-1 space-y-0.5 border-l border-sidebar-border pl-3">
+          {auditPlanSubItems.map((item) => {
+            if (item.managerOnly && !canImport) return null;
+            const isActive = item.exact
+              ? location.pathname === item.path
+              : location.pathname === item.path;
+            return (
+              <NavLink
+                key={item.path}
+                to={item.path}
+                onClick={onNavigate}
+                className={`flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition-all duration-150 ${
+                  isActive
+                    ? 'bg-sidebar-accent/70 text-sidebar-accent-foreground font-medium'
+                    : 'text-sidebar-foreground/60 hover:bg-sidebar-accent/40 hover:text-sidebar-foreground'
+                }`}
+              >
+                <item.icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-sidebar-primary' : ''}`} />
+                {item.label}
+              </NavLink>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function NavContent({ onNavigate }: { onNavigate?: () => void }) {
   const location = useLocation();
@@ -54,7 +130,7 @@ function NavContent({ onNavigate }: { onNavigate?: () => void }) {
         </div>
       </div>
 
-      <nav className="flex-1 p-4 space-y-1">
+      <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
         {navItems.map((item, index) => {
           const isActive = location.pathname === item.path;
           return (
@@ -88,6 +164,14 @@ function NavContent({ onNavigate }: { onNavigate?: () => void }) {
             </motion.div>
           );
         })}
+
+        {/* Audit Plan section */}
+        <div className="pt-2 border-t border-sidebar-border/50 mt-2">
+          <p className="text-xs font-semibold text-sidebar-foreground/40 uppercase tracking-wider px-4 py-1 mb-1">
+            Planning
+          </p>
+          <AuditPlanNavSection onNavigate={onNavigate} />
+        </div>
       </nav>
 
       <div className="p-4 border-t border-sidebar-border">

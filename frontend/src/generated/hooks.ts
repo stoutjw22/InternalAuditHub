@@ -6,6 +6,19 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api-client";
 import type {
+  AuditableEntity,
+  AuditableEntityDetail,
+  AuditPlanSummary as AuditPlanSummaryModel,
+  AuditPlanYear,
+  BulkImportResult,
+  ControlEffectivenessScale,
+  ControlRelianceCycle,
+  GRCTestingTheme,
+  KeyControlAssignment,
+  MARTestingEngagement,
+  RiskScoringConfig,
+} from "./models/audit-plan";
+import type {
   ApprovalRequest,
   AuditEngagement,
   AuditEngagementList,
@@ -131,6 +144,19 @@ export const QK = {
   testInstanceStats: (id: string) => ["test-instances", id, "statistics"] as const,
   sampleItems: (instanceId: string) => ["test-instances", instanceId, "samples"] as const,
   testExceptions: (instanceId: string) => ["test-instances", instanceId, "exceptions"] as const,
+  // Audit Plan (6-Year)
+  auditPlanEntities: (params?: object) => ["audit-plan-entities", params] as const,
+  auditPlanEntity: (id: number) => ["audit-plan-entities", id] as const,
+  auditPlanEntityPlanYears: (id: number) => ["audit-plan-entities", id, "plan-years"] as const,
+  auditPlanEntityControls: (id: number) => ["audit-plan-entities", id, "controls"] as const,
+  auditPlanYears: (params?: object) => ["audit-plan-years", params] as const,
+  auditPlanRiskScoring: () => ["audit-plan-risk-scoring"] as const,
+  auditPlanEffectivenessScale: () => ["audit-plan-effectiveness-scale"] as const,
+  auditPlanControls: (params?: object) => ["audit-plan-controls", params] as const,
+  auditPlanRelianceCycles: (params?: object) => ["audit-plan-reliance-cycles", params] as const,
+  auditPlanGrcThemes: (params?: object) => ["audit-plan-grc-themes", params] as const,
+  auditPlanMarEngagements: (params?: object) => ["audit-plan-mar-engagements", params] as const,
+  auditPlanSummary: () => ["audit-plan-summary"] as const,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1508,6 +1534,126 @@ export function useEscalateTestException(instanceId: string) {
     mutationFn: (id: string) => post<TestException>(`/test-exceptions/${id}/escalate/`, {}),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: QK.testExceptions(instanceId) });
+    },
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AUDIT PLAN — 6-Year Integrated Plan
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function useAuditPlanEntityList(params?: Record<string, unknown>) {
+  return useQuery({
+    queryKey: QK.auditPlanEntities(params),
+    queryFn: () => get<PaginatedResponse<AuditableEntity>>("/audit-plan/entities/", params),
+  });
+}
+
+export function useAuditPlanEntity(id: number) {
+  return useQuery({
+    queryKey: QK.auditPlanEntity(id),
+    queryFn: () => get<AuditableEntityDetail>(`/audit-plan/entities/${id}/`),
+    enabled: !!id,
+  });
+}
+
+export function useAuditPlanEntityPlanYears(id: number) {
+  return useQuery({
+    queryKey: QK.auditPlanEntityPlanYears(id),
+    queryFn: () => get<PaginatedResponse<AuditPlanYear>>(`/audit-plan/entities/${id}/plan-years/`),
+    enabled: !!id,
+  });
+}
+
+export function useAuditPlanEntityControls(id: number) {
+  return useQuery({
+    queryKey: QK.auditPlanEntityControls(id),
+    queryFn: () => get<PaginatedResponse<KeyControlAssignment>>(`/audit-plan/entities/${id}/controls/`),
+    enabled: !!id,
+  });
+}
+
+export function useAuditPlanYearList(params?: Record<string, unknown>) {
+  return useQuery({
+    queryKey: QK.auditPlanYears(params),
+    queryFn: () => get<PaginatedResponse<AuditPlanYear>>("/audit-plan/plan-years/", params),
+  });
+}
+
+export function useAuditPlanRiskScoring() {
+  return useQuery({
+    queryKey: QK.auditPlanRiskScoring(),
+    queryFn: () => get<PaginatedResponse<RiskScoringConfig>>("/audit-plan/risk-scoring/"),
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useAuditPlanEffectivenessScale() {
+  return useQuery({
+    queryKey: QK.auditPlanEffectivenessScale(),
+    queryFn: () => get<PaginatedResponse<ControlEffectivenessScale>>("/audit-plan/control-effectiveness-scale/"),
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useAuditPlanControlList(params?: Record<string, unknown>) {
+  return useQuery({
+    queryKey: QK.auditPlanControls(params),
+    queryFn: () => get<PaginatedResponse<KeyControlAssignment>>("/audit-plan/controls/", params),
+  });
+}
+
+export function useAuditPlanRelianceCycles(params?: Record<string, unknown>) {
+  return useQuery({
+    queryKey: QK.auditPlanRelianceCycles(params),
+    queryFn: () => get<PaginatedResponse<ControlRelianceCycle>>("/audit-plan/reliance-cycles/", params),
+  });
+}
+
+export function useAuditPlanGrcThemes(params?: Record<string, unknown>) {
+  return useQuery({
+    queryKey: QK.auditPlanGrcThemes(params),
+    queryFn: () => get<PaginatedResponse<GRCTestingTheme>>("/audit-plan/grc-themes/", params),
+  });
+}
+
+export function useAuditPlanMarEngagements(params?: Record<string, unknown>) {
+  return useQuery({
+    queryKey: QK.auditPlanMarEngagements(params),
+    queryFn: () => get<PaginatedResponse<MARTestingEngagement>>("/audit-plan/mar-engagements/", params),
+  });
+}
+
+export function useAuditPlanSummary() {
+  return useQuery({
+    queryKey: QK.auditPlanSummary(),
+    queryFn: () => get<PaginatedResponse<AuditPlanSummaryModel>>("/audit-plan/summary/"),
+  });
+}
+
+export function useAuditPlanBulkImport() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: unknown) => post<BulkImportResult>("/audit-plan/import/", payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["audit-plan-entities"] });
+      qc.invalidateQueries({ queryKey: ["audit-plan-years"] });
+      qc.invalidateQueries({ queryKey: ["audit-plan-controls"] });
+      qc.invalidateQueries({ queryKey: ["audit-plan-grc-themes"] });
+      qc.invalidateQueries({ queryKey: ["audit-plan-mar-engagements"] });
+      qc.invalidateQueries({ queryKey: ["audit-plan-summary"] });
+    },
+  });
+}
+
+export function useUpdateAuditPlanYear() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: number; data: Partial<AuditPlanYear> }) =>
+      patch<AuditPlanYear>(`/audit-plan/plan-years/${id}/`, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["audit-plan-years"] });
+      qc.invalidateQueries({ queryKey: ["audit-plan-entities"] });
     },
   });
 }
