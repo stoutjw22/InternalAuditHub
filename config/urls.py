@@ -23,6 +23,8 @@ api_v1 = [
     path("", include("apps.frameworks.urls")),
     path("", include("apps.testing.urls")),
     path("", include("apps.jurisdictions.urls")),
+    # 6-Year Integrated Audit Plan
+    path("", include("apps.audit_plan.urls")),
     # OpenAPI schema
     path("schema/", SpectacularAPIView.as_view(), name="schema"),
     path("docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),

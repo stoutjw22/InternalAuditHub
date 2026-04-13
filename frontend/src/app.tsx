@@ -7,6 +7,12 @@ import Layout from "@/pages/_layout";
 import LoginPage from "@/pages/login";
 
 // Lazy-loaded pages for code splitting
+const AuditPlanDashboard = lazy(() => import("@/pages/audit-plan/index"));
+const AuditableEntityDetail = lazy(() => import("@/pages/audit-plan/entity-detail"));
+const AuditPlanRiskScoring = lazy(() => import("@/pages/audit-plan/risk-scoring"));
+const AuditPlanGrcThemes = lazy(() => import("@/pages/audit-plan/grc-themes"));
+const AuditPlanYear6 = lazy(() => import("@/pages/audit-plan/year6"));
+const AuditPlanImport = lazy(() => import("@/pages/audit-plan/import-plan"));
 const HomePage = lazy(() => import("@/pages/index"));
 const EngagementsPage = lazy(() => import("@/pages/engagements"));
 const RisksPage = lazy(() => import("@/pages/risks"));
@@ -56,6 +62,13 @@ function ProtectedRoutes() {
           <Route path="testing" element={<TestingPage />} />
           <Route path="testing/:planId" element={<TestPlanDetailPage />} />
           <Route path="testing/:planId/instances/:instanceId" element={<TestInstancePage />} />
+          {/* 6-Year Integrated Audit Plan */}
+          <Route path="audit-plan" element={<AuditPlanDashboard />} />
+          <Route path="audit-plan/entities/:id" element={<AuditableEntityDetail />} />
+          <Route path="audit-plan/risk-scoring" element={<AuditPlanRiskScoring />} />
+          <Route path="audit-plan/grc-themes" element={<AuditPlanGrcThemes />} />
+          <Route path="audit-plan/year6" element={<AuditPlanYear6 />} />
+          <Route path="audit-plan/import" element={<AuditPlanImport />} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </Suspense>
